@@ -48,12 +48,19 @@ function run(seed, batchSize) {
     score: [match.hg, match.ag],
     shots: match.shots,
     possession: match.possession,
-    events: match.events
+    events: match.events,
+    actions: match.actionCounts
   };
 }
 
 assert.deepEqual(run(42, 3), run(42, 12), 'render speed must not alter the result');
 assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes');
+{
+  const actions = run(42, 3).actions;
+  for (const kind of ['dribbles', 'steals', 'tackles', 'slides', 'headers', 'catches', 'punches', 'passes', 'shots']) {
+    assert.ok(actions[kind] > 0, `${kind} must occur in the match simulation`);
+  }
+}
 
 {
   const { match } = create();
