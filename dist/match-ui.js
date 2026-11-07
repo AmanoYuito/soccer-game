@@ -1,6 +1,7 @@
 /* Match presentation and manager controls. The engine owns all positions and outcomes. */
 let matchSeed = 0;
 let matchCamera = 'full';
+let matchWasPaused = false;
 function matchRandom() {
   let value = matchSeed | 0;
   value ^= value << 13;
@@ -40,20 +41,20 @@ function matchView() {
       <div class="match-primary">
         <div class="stadium-frame">
           <canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
-          <div class="stadium-corner-label">${matchCamera === 'full' ? '全体カメラ' : 'ボール追従'} <span>●</span></div>
+          <button class="stadium-corner-label" data-action="camera">${matchCamera === 'full' ? 'ボールを追う' : '全体を見る'} <span>↻</span></button>
           <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
         </div>
         <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
         <div class="match-control-deck">
-          <div class="deck-group deck-play"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 再開' : 'Ⅱ 停止'}</button><div class="speed-group" aria-label="再生速度">${[1, 2, 4].map(speed => `<button class="deck-button ${match.speed === speed ? 'is-active' : ''}" data-action="speed" data-id="${speed}">×${speed}</button>`).join('')}</div></div>
-          <div class="deck-group deck-camera"><button class="deck-button ${matchCamera === 'full' ? 'is-active' : ''}" data-action="camera" data-id="full">▦ 全体</button><button class="deck-button ${matchCamera === 'follow' ? 'is-active' : ''}" data-action="camera" data-id="follow">◎ 追従</button></div>
-          <div class="deck-group deck-manager"><button class="deck-button deck-manager-button" data-action="matchTactics">⚑ 戦術変更</button><button class="deck-button deck-manager-button" data-action="substitute" ${match.subsUsed >= 5 || (match.windowsUsed >= 3 && !match.halftimePause) ? 'disabled' : ''}>⇄ 選手交代</button></div>
+          <button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button>
+          <button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button>
+          <button class="deck-button deck-manager-button" data-action="managerMenu">⚑ 監督メニュー</button>
         </div>
       </div>
       <aside class="match-aside">
         <div class="match-aside-card"><div class="aside-heading"><span>試合データ</span><small>MATCH DATA</small></div><div class="stat-line"><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div class="stat-line"><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div class="stat-line"><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div class="stat-line"><span>交代</span><strong id="subs-status">${substitutions}${queued}</strong></div></div>
-        <div class="match-aside-card stamina-card"><div class="aside-heading"><span>選手の体力</span><small>YOUR XI</small></div><div class="match-stamina" id="match-stamina">${matchStaminaHTML(match)}</div></div>
-        <div class="match-aside-card match-log-card"><div class="aside-heading"><span>試合の記録</span><small>PLAY BY PLAY</small></div><div class="events" id="events">${eventHTML(match.events)}</div></div>
+        <details class="match-aside-card stamina-card"><summary class="aside-heading"><span>選手の体力を見る</span><small>▼</small></summary><div class="match-stamina" id="match-stamina">${matchStaminaHTML(match)}</div></details>
+        <details class="match-aside-card match-log-card"><summary class="aside-heading"><span>試合の記録を見る</span><small>▼</small></summary><div class="events" id="events">${eventHTML(match.events)}</div></details>
       </aside>
     </div>
   </div>`;
@@ -254,6 +255,15 @@ function showHalftimeDialog() {
   showDialog(`<div class="eyebrow">HALF TIME</div><h2>ハーフタイム</h2><p>後半の指示を出せます。ここでの交代は交代機会に数えません。</p><div class="btn-row"><button class="btn" data-action="substitute">選手交代</button><button class="btn" data-action="matchTactics">戦術変更</button><button class="btn primary" data-action="resumeHalf">後半開始 →</button></div>`);
 }
 
+function showManagerMenu() {
+  if (!activeMatch) return;
+  matchWasPaused = activeMatch.paused;
+  activeMatch.paused = true;
+  render();
+  const noSubs = activeMatch.subsUsed >= 5 || (activeMatch.windowsUsed >= 3 && !activeMatch.halftimePause);
+  showDialog(`<div class="eyebrow">MANAGER MENU</div><h2>監督メニュー</h2><p>試合に指示を出します。</p><div class="manager-menu-actions"><button class="btn" data-action="matchTactics">⚑ 戦術を変える</button><button class="btn" data-action="substitute" ${noSubs ? 'disabled' : ''}>⇄ 選手を交代する</button></div><div class="btn-row" style="margin-top:18px"><button class="btn primary" data-action="cancelMatchDialog">▶ 試合に戻る</button></div>`);
+}
+
 function showSubDialog() {
   const match = activeMatch;
   if (!match) return;
@@ -338,9 +348,14 @@ document.addEventListener('click', event => {
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
   if (action === 'camera') {
-    matchCamera = button.dataset.id === 'follow' ? 'follow' : 'full';
+    matchCamera = matchCamera === 'full' ? 'follow' : 'full';
     render();
   }
+  if (action === 'cycleSpeed') {
+    activeMatch.speed = activeMatch.speed === 1 ? 2 : activeMatch.speed === 2 ? 4 : 1;
+    render();
+  }
+  if (action === 'managerMenu') showManagerMenu();
   if (action === 'substitute') showSubDialog();
   if (action === 'matchTactics') showTacticDialog();
   if (action === 'queueSub') {
@@ -353,7 +368,7 @@ document.addEventListener('click', event => {
     if (halftime) MatchEngine.applyQueuedSubs(activeMatch, true);
     closeDialog();
     if (halftime) { render(); showHalftimeDialog(); }
-    else { activeMatch.paused = false; render(); }
+    else { activeMatch.paused = matchWasPaused; render(); }
     showToast(halftime ? '交代を実行しました' : '次のプレー停止時に交代します');
   }
   if (action === 'applyMatchTactics') {
@@ -362,13 +377,13 @@ document.addEventListener('click', event => {
     persist();
     closeDialog();
     if (activeMatch.halftimePause) { render(); showHalftimeDialog(); }
-    else { activeMatch.paused = false; render(); }
+    else { activeMatch.paused = matchWasPaused; render(); }
     showToast('戦術を変更しました');
   }
   if (action === 'cancelMatchDialog') {
     closeDialog();
     if (activeMatch.halftimePause) { render(); showHalftimeDialog(); }
-    else { activeMatch.paused = false; render(); }
+    else { activeMatch.paused = matchWasPaused; render(); }
   }
   if (action === 'resumeHalf') {
     closeDialog();
