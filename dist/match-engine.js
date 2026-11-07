@@ -110,7 +110,7 @@
       hg: 0, ag: 0, shots: [0, 0], possessionSeconds: [0, 0], possession: 50,
       events: [], paused: false, speed: 1, committed: false, finished: false,
       highlight: null,
-      actionCounts: { dribbles: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, shots: 0 },
+      actionCounts: { dribbles: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, completedPasses: 0, shots: 0 },
       visualActions: [],
       halftime: false, subsUsed: 0, windowsUsed: 0, queuedSubs: [],
       appeared: ownPlayers.map(p => p.id), usedBench: [], subbedOut: [], exitStamina: {}, goalScorers: [],
@@ -139,8 +139,28 @@
     const holder = activePlayer(match);
     const ball = match.ball;
     const pressurePoint = holder || ball;
-    const defendingSide = holder ? 1 - holder.side : 1 - ball.lastTouch;
-    const pressers = nearestPlayers(match, defendingSide, pressurePoint, 3);
+    const attackingSide = holder ? holder.side : ball.lastTouch;
+    const defendingSide = 1 - attackingSide;
+    const defenders = match.players.filter(player => player.side === defendingSide && player.slot !== 0);
+    const pressers = [...defenders].sort((a, b) => distance(a, pressurePoint) - distance(b, pressurePoint)).slice(0, holder ? 2 : 3);
+    const opponents = match.players.filter(player => player.side === attackingSide && player.slot !== 0 && player.uid !== holder?.uid);
+    const marks = new Map();
+    const assigned = new Set();
+    for (const defender of defenders) {
+      if (pressers.includes(defender)) continue;
+      const base = match.baseSlots[defender.side][defender.slot];
+      const baseX = defender.side === 0 ? base.x : LENGTH - base.x;
+      const zone = { x: baseX + (ball.x - 52.5) * .18, y: base.y + (ball.y - 34) * .15 };
+      let best = null;
+      let bestCost = Infinity;
+      for (const opponent of opponents) {
+        if (assigned.has(opponent.uid)) continue;
+        const goalSide = { x: opponent.x - direction(defender.side) * 2.3, y: opponent.y };
+        const cost = distance(zone, goalSide) + (opponent.slot <= 4 ? 6 : 0);
+        if (cost < bestCost && cost < 25) { best = opponent; bestCost = cost; }
+      }
+      if (best) { marks.set(defender.uid, best); assigned.add(best.uid); }
+    }
     const ownPress = clamp(tactic.press / 100, 0, 1);
     for (const player of match.players) {
       const base = match.baseSlots[player.side][player.slot];
@@ -152,29 +172,57 @@
         continue;
       }
       if (holder && player.uid === holder.uid) {
-        player.tx = clamp(player.x + dir * 12, 2, 103);
-        player.ty = clamp(player.y + (34 - player.y) * .12, 3, 65);
+        const nearest = nearestPlayers(match, 1 - player.side, player, 1)[0];
+        const avoid = nearest && distance(player, nearest) < 9
+          ? (player.y === nearest.y ? (player.y < 34 ? -5 : 5) : clamp((player.y - nearest.y) * 1.2, -6, 6)) : 0;
+        player.tx = clamp(player.x + dir * 11, 2, 103);
+        player.ty = clamp(player.y + (34 - player.y) * .05 + avoid, 3, 65);
+        continue;
+      }
+      if (!holder && ball.kind === 'pass' && player.uid === ball.intendedReceiver) {
+        player.tx = clamp(ball.passTarget.x, 2, 103);
+        player.ty = clamp(ball.passTarget.y, 3, 65);
         continue;
       }
       if (pressers.includes(player)) {
-        const factor = player.side === match.ownSide ? .76 + ownPress * .24 : .9;
-        player.tx = clamp(baseX + (pressurePoint.x - baseX) * factor, 3, 102);
-        player.ty = clamp(base.y + (pressurePoint.y - base.y) * factor, 3, 65);
+        const second = pressers.indexOf(player) === 1;
+        const sideOffset = second ? (base.y < pressurePoint.y ? -2.4 : 2.4) : 0;
+        const standoff = second ? 2.1 : .7;
+        const pressFactor = player.side === match.ownSide ? .8 + ownPress * .2 : 1;
+        player.tx = clamp(baseX + (pressurePoint.x - dir * standoff - baseX) * pressFactor, 3, 102);
+        player.ty = clamp(base.y + (pressurePoint.y + sideOffset - base.y) * pressFactor, 3, 65);
         continue;
       }
-      const attacking = holder && holder.side === player.side;
-      const shift = attacking ? .27 : .16;
-      player.tx = clamp(baseX + (ball.x - 52.5) * shift + (attacking ? dir * 3 : 0), 3, 102);
-      player.ty = clamp(base.y + (ball.y - 34) * (attacking ? .25 : .18), 3, 65);
+      if (player.side === defendingSide) {
+        const zoneX = baseX + (ball.x - 52.5) * .18;
+        const zoneY = base.y + (ball.y - 34) * .15;
+        const marked = marks.get(player.uid);
+        player.tx = clamp(marked ? zoneX * .25 + (marked.x - dir * 2.3) * .75 : zoneX, 3, 102);
+        player.ty = clamp(marked ? zoneY * .25 + marked.y * .75 : zoneY, 3, 65);
+        continue;
+      }
+      const shapeX = baseX + (ball.x - 52.5) * .3 + dir * 2;
+      const shapeY = base.y + (ball.y - 34) * .14;
+      if (holder) {
+        const supportX = holder.x + dir * (player.slot >= 8 ? 15 : player.slot >= 5 ? 4 : -11);
+        const supportY = holder.y + clamp(base.y - holder.y, -24, 24) * .8;
+        const weight = clamp((37 - distance(player, holder)) / 40, 0, .65);
+        player.tx = clamp(shapeX * (1 - weight) + supportX * weight, 3, 102);
+        player.ty = clamp(shapeY * (1 - weight) + supportY * weight, 3, 65);
+      } else {
+        player.tx = clamp(shapeX, 3, 102);
+        player.ty = clamp(shapeY, 3, 65);
+      }
     }
   }
 
   function movePlayers(match) {
+    const holder = activePlayer(match);
     for (const player of match.players) {
       const dx = player.tx - player.x;
       const dy = player.ty - player.y;
       const d = Math.hypot(dx, dy);
-      const chasing = match.ball.carrier && player.side !== activePlayer(match)?.side && player.slot !== 0 && distance(player, match.ball) < 14;
+      const chasing = holder && player.side !== holder.side && player.slot !== 0 && distance(player, holder) < 14;
       const maxSpeed = (4.5 + 3.5 * player.speed / 100) * (chasing ? 1.13 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
       const accel = player.slot === 0 ? 7 : 11;
       const desiredX = d > .3 ? dx / d * maxSpeed : 0;
@@ -195,6 +243,7 @@
 
   function takePossession(match, player, kind = 'receive') {
     const oldSide = match.ball.lastTouch;
+    if (match.ball.kind === 'pass' && oldSide === player.side) match.actionCounts.completedPasses++;
     match.ball.carrier = player.uid;
     match.ball.kind = 'controlled';
     match.ball.lastTouch = player.side;
@@ -203,6 +252,7 @@
     match.ball.actionAt = match.seconds + .35;
     match.ball.dribbleUntil = 0;
     match.ball.airborneUntil = 0;
+    match.ball.intendedReceiver = null;
     match.ball.trail = [];
     if ((kind === 'intercept' || kind === 'tackle' || kind === 'slide') && oldSide !== player.side && match.seconds > 1) {
       match.highlight = { kind, x: player.x, y: player.y, until: match.seconds + (kind === 'tackle' ? 1.4 : 1.15), winner: player.uid };
@@ -234,16 +284,25 @@
   function findPass(match, holder, tactic, random) {
     const dir = direction(holder.side);
     const teammates = match.players.filter(p => p.side === holder.side && p.uid !== holder.uid && p.slot !== 0);
+    const defenders = match.players.filter(p => p.side !== holder.side && p.slot !== 0);
     let best = null;
     let bestScore = -Infinity;
     for (const target of teammates) {
       const d = distance(holder, target);
-      if (d < 5 || d > 43) continue;
+      if (d < 3 || d > 32) continue;
       const forward = (target.x - holder.x) * dir;
-      const nearby = nearestPlayers(match, 1 - holder.side, target, 1)[0];
-      const space = nearby ? distance(nearby, target) : 10;
-      const score = forward * .55 - d * .15 + Math.min(space, 15) * 1.3 + random() * 13
-        + (holder.side === match.ownSide && tactic.style === 'possession' ? (20 - d) * .35 : 0);
+      const space = Math.min(...defenders.map(defender => distance(defender, target)));
+      const dx = target.x - holder.x;
+      const dy = target.y - holder.y;
+      let laneRisk = 0;
+      for (const defender of defenders) {
+        const along = ((defender.x - holder.x) * dx + (defender.y - holder.y) * dy) / (d * d);
+        if (along <= .12 || along >= .92) continue;
+        const lateral = Math.hypot(defender.x - (holder.x + dx * along), defender.y - (holder.y + dy * along));
+        laneRisk = Math.max(laneRisk, Math.max(0, 4 - lateral));
+      }
+      const shortBonus = holder.side === match.ownSide && tactic.style === 'possession' ? (28 - d) * .3 : 0;
+      const score = forward * .34 - d * .52 + Math.min(space, 12) * 1.8 - laneRisk * 4 + shortBonus + random() * 4;
       if (score > bestScore) { bestScore = score; best = target; }
     }
     return best;
@@ -258,6 +317,8 @@
     match.ball.lastTouch = holder.side;
     match.ball.shooter = kind === 'shot' ? holder.uid : null;
     match.ball.kicker = holder.uid;
+    match.ball.intendedReceiver = null;
+    match.ball.passTarget = null;
     match.ball.ignoreUntil = match.seconds + .4;
     match.ball.x = holder.x + dx / d * 1.05;
     match.ball.y = holder.y + dy / d * 1.05;
@@ -293,14 +354,16 @@
       event(match, `${holder.name} がシュート！`, 'shot');
       return;
     }
-    const passChance = attackingTactic === 'possession' ? .62 : attackingTactic === 'counter' ? .32 : .45;
+    const passChance = attackingTactic === 'possession' ? .8 : attackingTactic === 'counter' ? .5 : .68;
     if (pressure < 6 || random() < passChance) {
       const receiver = findPass(match, holder, tactic, random);
       if (receiver) {
-        const error = (100 - holder.pass) / 25;
-        const aimX = receiver.x + receiver.vx * .55 + (random() - .5) * error;
-        const aimY = receiver.y + receiver.vy * .55 + (random() - .5) * error;
-        kick(match, holder, aimX, aimY, 12 + holder.pass / 8, 'pass', random);
+        const error = (100 - holder.pass) / 35;
+        const aimX = clamp(receiver.x + receiver.vx * .42 + (random() - .5) * error, 2, 103);
+        const aimY = clamp(receiver.y + receiver.vy * .42 + (random() - .5) * error, 2, 66);
+        kick(match, holder, aimX, aimY, 14.5 + holder.pass / 10, 'pass', random);
+        match.ball.intendedReceiver = receiver.uid;
+        match.ball.passTarget = { x: aimX, y: aimY };
         return;
       }
     }
@@ -399,8 +462,11 @@
       restart(match, 1 - ball.lastTouch, clamp(ball.x, 5, 100), clamp(ball.y, 2, 66));
       return;
     }
-    const nearby = match.players.filter(p => Math.hypot(p.x - ball.x, p.y - ball.y) < (p.slot === 0 ? 3.1 : 1.25));
-    nearby.sort((a, b) => distance(a, ball) - distance(b, ball));
+    const nearby = match.players.filter(player => {
+      const radius = player.slot === 0 ? 3.1 : ball.kind === 'pass' && player.uid === ball.intendedReceiver ? 1.5 : ball.kind === 'pass' && player.side === ball.lastTouch ? 1.35 : 1.25;
+      return distance(player, ball) < radius;
+    });
+    nearby.sort((a, b) => distance(a, ball) - distance(b, ball) - (a.uid === ball.intendedReceiver ? .2 : 0) + (b.uid === ball.intendedReceiver ? .2 : 0));
     for (const player of nearby) {
       if (player.uid === ball.kicker && match.seconds < ball.ignoreUntil) continue;
       if (ball.kind === 'shot' && player.uid === ball.shooter) continue;
@@ -468,7 +534,7 @@
       applyQueuedSubs(match, true);
       kickoff(match, 1);
     }
-    if (match.tick % 15 === 1) updateTargets(match, tactic);
+    if (match.tick % 9 === 1) updateTargets(match, tactic);
     movePlayers(match);
     processBall(match, random, tactic);
     if (match.tick % 4 === 0) {
