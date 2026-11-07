@@ -29,7 +29,7 @@ function growthReportHTML(report) {
 function training() {
   const rows = state.players.map((player, index) => `<div class="training-player">
     ${portraitSVG(player)}
-    <div class="training-player-name"><strong>${escapeHTML(player.name)}</strong><small>${index < 11 ? '先発' : '控え'} · ${escapeHTML(player.pos)} · 総合 ${player.ovr}</small></div>
+    <div class="training-player-name"><strong>${escapeHTML(player.name)}</strong><small>${index < 11 ? '先発' : '控え'} · ${escapeHTML(player.pos)} · 総合 ${rankOf(player.ovr)} ${player.ovr} · ${player.growthType}</small></div>
     <select class="field player-training-select" data-training-id="${player.id}" aria-label="${escapeHTML(player.name)}の練習">
       ${Object.entries(trainingThemes).map(([value, label]) => `<option value="${value}" ${playerTrainingTheme(player) === value ? 'selected' : ''}>${label}</option>`).join('')}
     </select>
