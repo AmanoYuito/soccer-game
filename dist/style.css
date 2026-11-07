@@ -9,3 +9,27 @@
 .player-profile-head{display:flex;align-items:center;gap:15px;margin:12px 0 18px}
 .player-profile-head h2{margin:0 0 4px}
 .player-profile-head p{margin:0}
+.training-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:18px}
+.training-player{display:flex;align-items:center;gap:10px;padding:10px;background:#1a3438;border:1px solid #365754;border-radius:9px;min-width:0}
+.training-player-name{display:grid;gap:3px;min-width:0;flex:1}
+.training-player-name strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.training-player-name small{font-size:10px;color:#9bb6aa}
+.player-training-select{min-width:105px;max-width:130px;padding:8px 9px;font-size:11px}
+.growth-card{margin-top:16px}
+.growth-report{display:grid;gap:6px;max-height:430px;overflow:auto;padding-right:5px}
+.growth-row{display:flex;align-items:center;gap:9px;padding:7px 5px;border-bottom:1px solid #48635c55;min-width:0}
+.growth-person{display:grid;gap:2px;min-width:110px}
+.growth-person strong{font-size:11px;white-space:nowrap}
+.growth-person small{font-size:9px;color:#91a99f}
+.growth-changes{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-left:auto}
+.growth-chip{background:#d4f184;color:#243d2e;border-radius:4px;padding:4px 6px;font-size:10px;font-weight:900;white-space:nowrap}
+.growth-chip.growth-down{background:#55695f;color:#e7ece1}
+.growth-none{font-size:10px;color:#8fa49b}
+.growth-title{font-size:15px;margin:18px 0 9px}
+.growth-hint{font-size:10px!important;margin:-3px 0 8px!important}
+.dialog:has(.growth-report){width:min(660px,100%);max-height:90vh;overflow:auto}
+.dialog .growth-report{max-height:260px}
+.dialog .growth-row{border-color:#6b847b55}
+.dialog .growth-person small{color:#829b91}
+@media(max-width:780px){.training-list{grid-template-columns:1fr}}
+@media(max-width:480px){.training-player{gap:7px;padding:8px}.training-player .player-portrait{width:33px;height:33px}.player-training-select{min-width:90px;max-width:100px}.growth-report .player-portrait{width:31px;height:31px}.growth-row{flex-wrap:nowrap}.growth-person{flex:1;min-width:77px}.growth-changes{width:auto;margin-left:auto}.growth-chip{font-size:9px;padding:3px 4px}}
