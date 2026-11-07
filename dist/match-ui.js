@@ -1,5 +1,6 @@
 /* Match presentation and manager controls. The engine owns all positions and outcomes. */
 let matchSeed = 0;
+let matchCamera = 'full';
 function matchRandom() {
   let value = matchSeed | 0;
   value ^= value << 13;
@@ -27,25 +28,35 @@ function matchView() {
   const match = activeMatch;
   const substitutions = `${match.subsUsed}/5人 · ${match.windowsUsed}/3回`;
   const queued = match.queuedSubs.length ? ` · 予約 ${match.queuedSubs.length}人` : '';
-  return `${pageHead('LIVE MATCH', `第${state.round + 1}節 · 試合観戦`, '選手は自律的にプレーします。監督として戦術と交代を指示できます。')}
-    <div class="match-layout">
-      <div class="card card-pad">
-        <div class="match-score"><div class="side">${escapeHTML(state.clubs[match.home].name)}</div><div class="score" id="score">${match.hg} - ${match.ag}</div><div class="side">${escapeHTML(state.clubs[match.away].name)}</div></div>
-        <div class="match-clock" id="match-clock">${matchClock(match)}</div>
-        <canvas id="match-canvas" class="field-canvas" width="760" height="430" aria-label="サッカーの試合画面"></canvas>
-        <div class="btn-row" style="margin-top:15px">
-          <button class="btn ${match.paused ? 'primary' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 再開' : 'Ⅱ 一時停止'}</button>
-          ${[1, 2, 4].map(speed => `<button class="btn ${match.speed === speed ? 'primary' : ''}" data-action="speed" data-id="${speed}">×${speed}</button>`).join('')}
-          <button class="btn" data-action="matchTactics">戦術変更</button>
-          <button class="btn" data-action="substitute" ${match.subsUsed >= 5 || (match.windowsUsed >= 3 && !match.halftimePause) ? 'disabled' : ''}>選手交代</button>
+  const latest = match.events[match.events.length - 1];
+  return `<div class="match-app">
+    <div class="match-topline"><span>ASTERIA ${state.division} DIVISION <i></i> 第${state.round + 1}節</span><span class="match-live-dot">● LIVE MATCH</span></div>
+    <div class="match-hud">
+      <div class="hud-team ${match.ownSide === 0 ? 'hud-own' : ''}"><span class="hud-kit hud-kit-home">${escapeHTML(state.clubs[match.home].name.slice(0, 1))}</span><div><small>HOME</small><strong>${escapeHTML(state.clubs[match.home].name)}</strong></div></div>
+      <div class="hud-center"><div class="hud-score"><span id="home-score">${match.hg}</span><b>:</b><span id="away-score">${match.ag}</span></div><div class="hud-clock" id="match-clock">${matchClock(match)}</div></div>
+      <div class="hud-team hud-away ${match.ownSide === 1 ? 'hud-own' : ''}"><div><small>AWAY</small><strong>${escapeHTML(state.clubs[match.away].name)}</strong></div><span class="hud-kit hud-kit-away">${escapeHTML(state.clubs[match.away].name.slice(0, 1))}</span></div>
+    </div>
+    <div class="match-columns">
+      <div class="match-primary">
+        <div class="stadium-frame">
+          <canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
+          <div class="stadium-corner-label">${matchCamera === 'full' ? '全体カメラ' : 'ボール追従'} <span>●</span></div>
+          <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
+        </div>
+        <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
+        <div class="match-control-deck">
+          <div class="deck-group deck-play"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 再開' : 'Ⅱ 停止'}</button><div class="speed-group" aria-label="再生速度">${[1, 2, 4].map(speed => `<button class="deck-button ${match.speed === speed ? 'is-active' : ''}" data-action="speed" data-id="${speed}">×${speed}</button>`).join('')}</div></div>
+          <div class="deck-group deck-camera"><button class="deck-button ${matchCamera === 'full' ? 'is-active' : ''}" data-action="camera" data-id="full">▦ 全体</button><button class="deck-button ${matchCamera === 'follow' ? 'is-active' : ''}" data-action="camera" data-id="follow">◎ 追従</button></div>
+          <div class="deck-group deck-manager"><button class="deck-button deck-manager-button" data-action="matchTactics">⚑ 戦術変更</button><button class="deck-button deck-manager-button" data-action="substitute" ${match.subsUsed >= 5 || (match.windowsUsed >= 3 && !match.halftimePause) ? 'disabled' : ''}>⇄ 選手交代</button></div>
         </div>
       </div>
-      <div class="panel-stack">
-        ${card('実況', `<div class="events" id="events">${eventHTML(match.events)}</div>`)}
-        ${card('試合データ', `<div class="news-list"><div class="news-item">シュート　<b id="shots">${match.shots[0]} - ${match.shots[1]}</b></div><div class="news-item">支配率　<b id="possession">${match.possession}% - ${100 - match.possession}%</b></div><div class="news-item">戦術　<b id="live-style">${styleLabel(state.style)}</b></div><div class="news-item">交代　<b id="subs-status">${substitutions}${queued}</b></div></div>`)}
-        ${card('選手のスタミナ', `<div class="match-stamina" id="match-stamina">${matchStaminaHTML(match)}</div>`)}
-      </div>
-    </div>`;
+      <aside class="match-aside">
+        <div class="match-aside-card"><div class="aside-heading"><span>試合データ</span><small>MATCH DATA</small></div><div class="stat-line"><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div class="stat-line"><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div class="stat-line"><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div class="stat-line"><span>交代</span><strong id="subs-status">${substitutions}${queued}</strong></div></div>
+        <div class="match-aside-card stamina-card"><div class="aside-heading"><span>選手の体力</span><small>YOUR XI</small></div><div class="match-stamina" id="match-stamina">${matchStaminaHTML(match)}</div></div>
+        <div class="match-aside-card match-log-card"><div class="aside-heading"><span>試合の記録</span><small>PLAY BY PLAY</small></div><div class="events" id="events">${eventHTML(match.events)}</div></div>
+      </aside>
+    </div>
+  </div>`;
 }
 
 function eventHTML(events) {
@@ -61,6 +72,7 @@ function startMatch() {
   }
   const opponentId = fixture[0] === 0 ? fixture[1] : fixture[0];
   matchSeed = state.seed;
+  matchCamera = window.matchMedia('(max-width:780px)').matches ? 'follow' : 'full';
   activeMatch = MatchEngine.create({
     home: fixture[0],
     away: fixture[1],
@@ -97,7 +109,8 @@ function tickMatch() {
 function updateMatchUI() {
   const match = activeMatch;
   if (!match) return;
-  if ($('#score')) $('#score').textContent = `${match.hg} - ${match.ag}`;
+  if ($('#home-score')) $('#home-score').textContent = match.hg;
+  if ($('#away-score')) $('#away-score').textContent = match.ag;
   if ($('#match-clock')) $('#match-clock').textContent = matchClock(match);
   if ($('#events')) $('#events').innerHTML = eventHTML(match.events);
   if ($('#shots')) $('#shots').textContent = `${match.shots[0]} - ${match.shots[1]}`;
@@ -105,6 +118,12 @@ function updateMatchUI() {
   if ($('#live-style')) $('#live-style').textContent = styleLabel(state.style);
   if ($('#subs-status')) $('#subs-status').textContent = `${match.subsUsed}/5人 · ${match.windowsUsed}/3回${match.queuedSubs.length ? ` · 予約 ${match.queuedSubs.length}人` : ''}`;
   if ($('#match-stamina')) $('#match-stamina').innerHTML = matchStaminaHTML(match);
+  if ($('#match-progress-fill')) $('#match-progress-fill').style.width = `${Math.min(100, match.minute / 90 * 100)}%`;
+  const latest = match.events[match.events.length - 1];
+  if ($('#live-comment') && latest) {
+    $('#live-comment').innerHTML = `<span class="commentary-minute">${latest.minute}′</span><span class="commentary-text">${escapeHTML(latest.text)}</span>`;
+    $('#live-comment').classList.toggle('commentary-goal', !!latest.goal && match.minute - latest.minute < 1);
+  }
 }
 
 function drawMatch() {
@@ -114,48 +133,121 @@ function drawMatch() {
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
   const height = canvas.height;
-  const px = x => 22 + x / 105 * (width - 44);
-  const py = y => 22 + y / 68 * (height - 44);
+  const pitch = { x: 44, y: 36, w: 872, h: 468 };
+  const px = x => pitch.x + x / 105 * pitch.w;
+  const py = y => pitch.y + y / 68 * pitch.h;
+  const zoom = matchCamera === 'follow' ? 1.72 : 1;
+  const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
+  const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
+  ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-focusX, -focusY);
 
-  ctx.fillStyle = '#176248';
+  // An original pixel stadium and pitch; no external game art is used.
+  ctx.fillStyle = '#654538';
   ctx.fillRect(0, 0, width, height);
-  for (let i = 0; i < 10; i++) {
-    ctx.fillStyle = i % 2 ? '#ffffff08' : '#00000008';
-    ctx.fillRect(0, i * height / 10, width, height / 10);
+  ctx.fillStyle = '#2b3c34';
+  ctx.fillRect(0, 0, width, 30);
+  ctx.fillRect(0, height - 30, width, 30);
+  const crowd = ['#d5c078', '#d85b48', '#6d9f93', '#e4d8aa', '#49615b'];
+  for (let i = 0; i < 240; i++) {
+    const x = (i * 83) % width;
+    const y = i % 2 ? 5 + (i * 17) % 20 : height - 27 + (i * 13) % 20;
+    ctx.fillStyle = crowd[i % crowd.length];
+    ctx.fillRect(x, y, 4, 3);
   }
-  ctx.strokeStyle = '#d9f3d0aa';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(22, 22, width - 44, height - 44);
-  ctx.beginPath(); ctx.moveTo(width / 2, 22); ctx.lineTo(width / 2, height - 22); ctx.stroke();
-  ctx.beginPath(); ctx.arc(width / 2, height / 2, 54, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeRect(22, height / 2 - 87, 94, 174);
-  ctx.strokeRect(width - 116, height / 2 - 87, 94, 174);
-  ctx.strokeRect(22, height / 2 - 38, 35, 76);
-  ctx.strokeRect(width - 57, height / 2 - 38, 35, 76);
-  ctx.fillStyle = '#e6f7db';
-  ctx.beginPath(); ctx.arc(width / 2, height / 2, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#b88455';
+  ctx.fillRect(0, 28, width, 8);
+  ctx.fillRect(0, height - 36, width, 8);
+  ctx.fillStyle = '#244e35';
+  ctx.fillRect(pitch.x - 5, pitch.y - 5, pitch.w + 10, pitch.h + 10);
+  ctx.fillStyle = '#52923c';
+  ctx.fillRect(pitch.x, pitch.y, pitch.w, pitch.h);
+  for (let i = 0; i < 12; i++) {
+    ctx.fillStyle = i % 2 ? '#65a449' : '#5d9c43';
+    ctx.fillRect(pitch.x + i * pitch.w / 12, pitch.y, pitch.w / 12 + 1, pitch.h);
+  }
+  ctx.fillStyle = '#d8c65f';
+  ctx.fillRect(pitch.x, pitch.y - 5, pitch.w, 5);
+  ctx.fillRect(pitch.x, pitch.y + pitch.h, pitch.w, 5);
+  ctx.strokeStyle = '#e6efc7';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(pitch.x + 4, pitch.y + 4, pitch.w - 8, pitch.h - 8);
+  ctx.beginPath(); ctx.moveTo(px(52.5), pitch.y + 4); ctx.lineTo(px(52.5), pitch.y + pitch.h - 4); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(px(52.5), py(34), 54, 54, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeRect(px(0) + 4, py(34 - 20), px(16.5) - px(0), py(40) - py(0));
+  ctx.strokeRect(px(88.5), py(34 - 20), px(105) - px(88.5) - 4, py(40) - py(0));
+  ctx.strokeRect(px(0) + 4, py(34 - 9), px(5.5) - px(0), py(18) - py(0));
+  ctx.strokeRect(px(99.5), py(34 - 9), px(105) - px(99.5) - 4, py(18) - py(0));
+  ctx.fillStyle = '#e6efc7';
+  for (const x of [11, 52.5, 94]) { ctx.beginPath(); ctx.arc(px(x), py(34), 3, 0, Math.PI * 2); ctx.fill(); }
+  for (const x of [pitch.x - 9, pitch.x + pitch.w + 1]) {
+    ctx.fillStyle = '#d8e3d0';
+    ctx.fillRect(x, py(34 - 4), 9, py(8) - py(0));
+    ctx.fillStyle = '#91ad94';
+    for (let n = 1; n < 4; n++) ctx.fillRect(x + n * 2, py(34 - 4), 1, py(8) - py(0));
+  }
 
-  for (const player of match.players) {
-    const x = px(player.x);
-    const y = py(player.y);
+  const carrier = match.players.find(player => player.uid === match.ball.carrier);
+  for (const player of [...match.players].sort((a, b) => a.y - b.y)) {
+    const x = Math.round(px(player.x));
+    const y = Math.round(py(player.y));
     const own = player.side === match.ownSide;
-    ctx.fillStyle = '#07191bb0';
-    ctx.beginPath(); ctx.ellipse(x + 2, y + 9, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = own ? '#d4f584' : '#ef9d78';
-    ctx.fillRect(x - 7, y - 9, 14, 15);
-    ctx.fillStyle = own ? '#163328' : '#512c28';
-    ctx.fillRect(x - 6, y + 6, 5, 6);
-    ctx.fillRect(x + 1, y + 6, 5, 6);
-    ctx.fillStyle = '#172b2a';
-    ctx.beginPath(); ctx.arc(x, y - 11, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = own ? '#183024' : '#4a2927';
-    ctx.font = 'bold 9px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(player.number, x, y + 2);
+    const keeper = player.slot === 0;
+    const stride = Math.abs(player.vx) + Math.abs(player.vy) > 1 ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 2) : 0;
+    const shirt = keeper ? '#e7ad46' : own ? '#f8f3dc' : '#cf5650';
+    const trim = keeper ? '#65452a' : own ? '#275c8d' : '#f4d7aa';
+    const shorts = own ? '#275c8d' : '#f0e4cf';
+    ctx.fillStyle = '#173d2b80';
+    ctx.beginPath(); ctx.ellipse(x, y + 11, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+    if (carrier === player) {
+      ctx.strokeStyle = '#fff49c';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, y + 7, 15, 7, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fff49c';
+      ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x - 5, y - 30); ctx.lineTo(x + 5, y - 30); ctx.fill();
+    }
+    ctx.fillStyle = '#1d3340';
+    ctx.fillRect(x - 7, y + 8 + stride, 5, 3);
+    ctx.fillRect(x + 2, y + 8 - stride, 5, 3);
+    ctx.fillStyle = shorts;
+    ctx.fillRect(x - 6, y + 3, 5, 7 + stride);
+    ctx.fillRect(x + 1, y + 3, 5, 7 - stride);
+    ctx.fillStyle = '#d69d69';
+    ctx.fillRect(x - 10, y - 7, 4, 9);
+    ctx.fillRect(x + 6, y - 7, 4, 9);
+    ctx.fillStyle = shirt;
+    ctx.fillRect(x - 8, y - 10, 16, 14);
+    ctx.fillStyle = trim;
+    ctx.fillRect(x - 8, y - 9, 16, 3);
+    ctx.fillRect(x - 2, y - 6, 4, 8);
+    ctx.fillStyle = '#d69d69';
+    ctx.fillRect(x - 5, y - 18, 10, 9);
+    ctx.fillStyle = '#293034';
+    ctx.fillRect(x - 6, y - 20, 12, 4);
+    ctx.fillRect(x - 6, y - 17, 2, 4);
+    if (carrier === player && matchCamera === 'follow') {
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      const name = player.name.split(' ')[0];
+      const textWidth = ctx.measureText(name).width;
+      ctx.fillStyle = '#163a2cee';
+      ctx.fillRect(x - textWidth / 2 - 5, y - 47, textWidth + 10, 15);
+      ctx.fillStyle = '#fff8dd';
+      ctx.fillText(name, x, y - 36);
+    }
   }
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(px(match.ball.x), py(match.ball.y), 5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#263a36'; ctx.lineWidth = 1; ctx.stroke();
+  const bx = Math.round(px(match.ball.x));
+  const by = Math.round(py(match.ball.y));
+  ctx.fillStyle = '#21432b88';
+  ctx.fillRect(bx - 4, by + 3, 9, 3);
+  ctx.fillStyle = '#fffdf1';
+  ctx.fillRect(bx - 5, by - 5, 10, 10);
+  ctx.fillStyle = '#243b34';
+  ctx.fillRect(bx - 1, by - 1, 3, 3);
+  ctx.restore();
 }
 
 function showHalftimeDialog() {
@@ -245,6 +337,10 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
+  if (action === 'camera') {
+    matchCamera = button.dataset.id === 'follow' ? 'follow' : 'full';
+    render();
+  }
   if (action === 'substitute') showSubDialog();
   if (action === 'matchTactics') showTacticDialog();
   if (action === 'queueSub') {
