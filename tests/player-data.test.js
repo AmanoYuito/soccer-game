@@ -1,0 +1,29 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const context = vm.createContext({});
+vm.runInContext(fs.readFileSync(require.resolve('../dist/player-data.js'), 'utf8'), context);
+const rank = value => vm.runInContext(`rankOf(${value})`, context);
+for (const [value, grade] of [[100, 'S'], [90, 'S'], [89, 'A'], [80, 'A'], [79, 'B'], [70, 'B'], [60, 'C'], [50, 'D'], [40, 'E'], [30, 'F'], [1, 'G']]) {
+  assert.equal(rank(value), grade);
+}
+const player = { id: 1, name: '検証 選手', pos: 'CF', ovr: 70, shoot: 76, pass: 65, defend: 42, speed: 80, stamina: 90 };
+context.player = player;
+assert.equal(vm.runInContext('enrichPlayer(player)', context), true);
+assert.equal(Object.keys(player.abilities).length, 35);
+assert.ok(player.heightCm >= 166 && player.heightCm <= 192);
+assert.ok(player.weightKg > 0);
+const original = JSON.stringify(player);
+assert.equal(vm.runInContext('enrichPlayer(player)', context), false);
+assert.equal(JSON.stringify(player), original, 'migration must be stable');
+const originalLook = JSON.stringify(player.appearance);
+player.appearance.hair = (player.appearance.hair + 1) % 7;
+assert.notEqual(JSON.stringify(player.appearance), originalLook);
+assert.equal(vm.runInContext('enrichPlayer(player)', context), false, 'custom appearance must persist');
+const before = { shoot: player.shoot, pass: player.pass, defend: player.defend, speed: player.speed };
+context.before = before;
+const oldAccuracy = player.abilities.shotAccuracy;
+player.shoot += 2;
+vm.runInContext("advanceDetailedAbilities(player, before, 'attack')", context);
+assert.equal(player.abilities.shotAccuracy, Math.min(100, oldAccuracy + 2));
+console.log('Player abilities, grades and save migration checks passed.');
