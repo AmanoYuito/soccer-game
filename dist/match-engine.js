@@ -93,7 +93,8 @@
     match.ball = {
       x: 52.5, y: 34, vx: 0, vy: 0,
       carrier: carrier.uid, kind: 'controlled', lastTouch: side,
-      shooter: null, kicker: null, ignoreUntil: 0, actionAt: match.seconds + .55
+      shooter: null, kicker: null, ignoreUntil: 0, actionAt: match.seconds + .55,
+      dribbleUntil: 0, trail: [], airborneUntil: 0, flightStart: 0, flightDuration: 0
     };
   }
 
@@ -108,6 +109,9 @@
       seconds: 0, minute: 0, tick: 0,
       hg: 0, ag: 0, shots: [0, 0], possessionSeconds: [0, 0], possession: 50,
       events: [], paused: false, speed: 1, committed: false, finished: false,
+      highlight: null,
+      actionCounts: { dribbles: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, shots: 0 },
+      visualActions: [],
       halftime: false, subsUsed: 0, windowsUsed: 0, queuedSubs: [],
       appeared: ownPlayers.map(p => p.id), usedBench: [], subbedOut: [], exitStamina: {}, goalScorers: [],
       baseSlots: [slots(formation), slots('4-3-3')],
@@ -136,7 +140,7 @@
     const ball = match.ball;
     const pressurePoint = holder || ball;
     const defendingSide = holder ? 1 - holder.side : 1 - ball.lastTouch;
-    const pressers = nearestPlayers(match, defendingSide, pressurePoint, 2);
+    const pressers = nearestPlayers(match, defendingSide, pressurePoint, 3);
     const ownPress = clamp(tactic.press / 100, 0, 1);
     for (const player of match.players) {
       const base = match.baseSlots[player.side][player.slot];
@@ -153,7 +157,7 @@
         continue;
       }
       if (pressers.includes(player)) {
-        const factor = player.side === match.ownSide ? .62 + ownPress * .38 : .8;
+        const factor = player.side === match.ownSide ? .76 + ownPress * .24 : .9;
         player.tx = clamp(baseX + (pressurePoint.x - baseX) * factor, 3, 102);
         player.ty = clamp(base.y + (pressurePoint.y - base.y) * factor, 3, 65);
         continue;
@@ -170,7 +174,8 @@
       const dx = player.tx - player.x;
       const dy = player.ty - player.y;
       const d = Math.hypot(dx, dy);
-      const maxSpeed = (4.5 + 3.5 * player.speed / 100) * (1 - .18 * (1 - player.stamina / 100) ** 2);
+      const chasing = match.ball.carrier && player.side !== activePlayer(match)?.side && player.slot !== 0 && distance(player, match.ball) < 14;
+      const maxSpeed = (4.5 + 3.5 * player.speed / 100) * (chasing ? 1.13 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
       const accel = player.slot === 0 ? 7 : 11;
       const desiredX = d > .3 ? dx / d * maxSpeed : 0;
       const desiredY = d > .3 ? dy / d * maxSpeed : 0;
@@ -183,23 +188,43 @@
     }
   }
 
-  function takePossession(match, player) {
+  function recordAction(match, kind, player, duration = .9) {
+    match.visualActions.push({ kind, uid: player.uid, x: player.x, y: player.y, start: match.seconds, until: match.seconds + duration });
+    match.visualActions = match.visualActions.filter(action => action.until > match.seconds).slice(-8);
+  }
+
+  function takePossession(match, player, kind = 'receive') {
+    const oldSide = match.ball.lastTouch;
     match.ball.carrier = player.uid;
     match.ball.kind = 'controlled';
     match.ball.lastTouch = player.side;
     match.ball.vx = 0;
     match.ball.vy = 0;
     match.ball.actionAt = match.seconds + .35;
+    match.ball.dribbleUntil = 0;
+    match.ball.airborneUntil = 0;
+    match.ball.trail = [];
+    if ((kind === 'intercept' || kind === 'tackle' || kind === 'slide') && oldSide !== player.side && match.seconds > 1) {
+      match.highlight = { kind, x: player.x, y: player.y, until: match.seconds + (kind === 'tackle' ? 1.4 : 1.15), winner: player.uid };
+      match.actionCounts.steals++;
+      if (kind === 'tackle' || kind === 'slide') match.actionCounts.tackles++;
+      if (kind === 'slide') match.actionCounts.slides++;
+      event(match, kind === 'slide' ? `${player.name} がスライディングで奪取！` : kind === 'tackle' ? `${player.name} がタックルで奪取！` : `${player.name} がボールを奪った！`, 'steal');
+    }
   }
 
   function tackle(match, holder, random, tactic) {
     const defenders = nearestPlayers(match, 1 - holder.side, holder, 2);
     for (const defender of defenders) {
-      if (defender.slot === 0 || distance(defender, holder) > 1.55) continue;
+      if (defender.slot === 0 || distance(defender, holder) > 2.6) continue;
       const press = defender.side === match.ownSide ? tactic.press : 50;
-      const chance = clamp(.07 + (defender.defend - holder.ovr) / 400 + press / 1000, .025, .2);
+      const chance = clamp(.11 + (defender.defend - holder.ovr) / 320 + press / 850, .04, .28);
+      const move = distance(defender, holder) > 1.7 ? 'slide' : 'tackle';
+      if (match.tick % 18 === 0) recordAction(match, move, defender, move === 'slide' ? 1.15 : .8);
       if (random() < chance) {
-        takePossession(match, defender);
+        takePossession(match, defender, move);
+        recordAction(match, move, defender, move === 'slide' ? 1.15 : .8);
+        if (match.highlight) match.highlight.loser = holder.uid;
         return true;
       }
     }
@@ -239,10 +264,21 @@
     match.ball.vx = dx / d * speed;
     match.ball.vy = dy / d * speed;
     match.ball.actionAt = match.seconds + .4;
+    match.ball.dribbleUntil = 0;
+    const flightDuration = kind === 'pass' && d > 16 ? Math.min(1.25, d / speed * .7) : kind === 'shot' ? .75 : 0;
+    match.ball.flightStart = match.seconds;
+    match.ball.flightDuration = flightDuration;
+    match.ball.airborneUntil = match.seconds + flightDuration;
+    recordAction(match, kind, holder, kind === 'shot' ? 1.05 : .8);
+    if (kind === 'shot') match.actionCounts.shots++; else match.actionCounts.passes++;
   }
 
   function decide(match, holder, random, tactic) {
     if (match.seconds < match.ball.actionAt) return;
+    if (match.seconds < match.ball.dribbleUntil) {
+      match.ball.actionAt = match.ball.dribbleUntil;
+      return;
+    }
     const dir = direction(holder.side);
     const goalDistance = holder.side === 0 ? 105 - holder.x : holder.x;
     const defenders = nearestPlayers(match, 1 - holder.side, holder, 1);
@@ -269,8 +305,11 @@
       }
     }
     const tempo = holder.side === match.ownSide ? clamp(tactic.tempo, 0, 100) : 50;
-    match.ball.actionAt = match.seconds + .7 - tempo * .003 + random() * .35;
+    match.ball.dribbleUntil = match.seconds + 1.3 - tempo * .004 + random() * .5;
+    match.ball.actionAt = match.ball.dribbleUntil;
     holder.tx = clamp(holder.x + dir * 13, 2, 103);
+    match.actionCounts.dribbles++;
+    event(match, `${holder.name} がドリブルで前へ！`, 'dribble');
   }
 
   function applyQueuedSubs(match, isHalftime) {
@@ -326,8 +365,9 @@
     const holder = activePlayer(match);
     if (holder) {
       const dir = direction(holder.side);
-      ball.x = clamp(holder.x + dir * .7, 0, LENGTH);
-      ball.y = holder.y;
+      const touch = Math.sin(match.seconds * 15);
+      ball.x = clamp(holder.x + dir * (.7 + .32 * Math.max(0, touch)), 0, LENGTH);
+      ball.y = clamp(holder.y + .48 * touch, 0, WIDTH);
       match.possessionSeconds[holder.side] += DT;
       if (match.tick % 6 === 0 && !tackle(match, holder, random, tactic)) decide(match, holder, random, tactic);
       return;
@@ -368,8 +408,25 @@
         if (player.slot === 0) {
           const saveChance = clamp(.5 + player.ovr / 220 - speed / 110, .35, .85);
           if (random() < saveChance) {
-            event(match, `${player.name} がシュートをセーブ！`, 'save');
-            restart(match, player.side, player.x, player.y);
+            const catchBall = speed < 25 || random() < .55;
+            if (catchBall) {
+              takePossession(match, player);
+              match.ball.actionAt = match.seconds + 1;
+              recordAction(match, 'catch', player, 1.25);
+              match.actionCounts.catches++;
+              event(match, `${player.name} がジャンプしてキャッチ！`, 'save');
+            } else {
+              ball.carrier = null;
+              ball.kind = 'free';
+              ball.lastTouch = player.side;
+              ball.vx = direction(player.side) * 14;
+              ball.vy = (random() - .5) * 12;
+              ball.kicker = player.uid;
+              ball.ignoreUntil = match.seconds + .5;
+              recordAction(match, 'punch', player, 1.25);
+              match.actionCounts.punches++;
+              event(match, `${player.name} がジャンプしてパンチング！`, 'save');
+            }
             return;
           }
         } else if (random() < .5) {
@@ -382,13 +439,21 @@
         }
       }
       if (ball.kind !== 'shot' || player.slot === 0 || speed < 10) {
-        takePossession(match, player);
+        if (ball.kind === 'pass' && match.seconds < ball.airborneUntil && player.slot !== 0) {
+          takePossession(match, player, player.side !== ball.lastTouch ? 'intercept' : 'receive');
+          recordAction(match, 'header', player, 1.1);
+          match.actionCounts.headers++;
+          match.ball.actionAt = match.seconds + .65;
+          event(match, `${player.name} がジャンプしてヘディング！`, 'header');
+          return;
+        }
+        takePossession(match, player, player.side !== ball.lastTouch ? 'intercept' : 'receive');
         return;
       }
     }
     if (speed < .8) {
       const player = nearestPlayers(match, 1 - ball.lastTouch, ball, 1)[0];
-      if (player) takePossession(match, player);
+      if (player) takePossession(match, player, 'intercept');
     }
   }
 
@@ -406,6 +471,10 @@
     if (match.tick % 15 === 1) updateTargets(match, tactic);
     movePlayers(match);
     processBall(match, random, tactic);
+    if (match.tick % 4 === 0) {
+      match.ball.trail.push({ x: match.ball.x, y: match.ball.y });
+      if (match.ball.trail.length > 6) match.ball.trail.shift();
+    }
     const possessionTotal = match.possessionSeconds[0] + match.possessionSeconds[1];
     match.possession = possessionTotal ? Math.round(match.possessionSeconds[0] / possessionTotal * 100) : 50;
     if (match.seconds >= 360) {
