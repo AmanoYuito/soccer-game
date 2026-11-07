@@ -60,6 +60,7 @@ assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes
   for (const kind of ['dribbles', 'steals', 'tackles', 'slides', 'headers', 'catches', 'punches', 'passes', 'shots']) {
     assert.ok(actions[kind] > 0, `${kind} must occur in the match simulation`);
   }
+  assert.ok(actions.completedPasses / actions.passes > .7, 'most selected passes should reach a teammate');
 }
 
 {
