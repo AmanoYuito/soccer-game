@@ -15,6 +15,7 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const direction = side => side === 0 ? 1 : -1;
+  const rating = (player, key, fallback) => Number.isFinite(player.abilities?.[key]) ? player.abilities[key] : fallback;
 
   function slots(formation) {
     const rows = FORMATIONS[formation] || FORMATIONS['4-3-3'];
@@ -50,7 +51,10 @@
       pass: source.pass,
       defend: source.defend,
       speed: source.speed,
-      stamina: source.stamina
+      stamina: source.stamina,
+      abilities: source.abilities ? { ...source.abilities } : null,
+      appearance: source.appearance ? { ...source.appearance } : null,
+      heightCm: source.heightCm || 175
     };
   }
 
@@ -69,7 +73,8 @@
         pass: clamp(value + Math.round((random() - .5) * 24), 20, 95),
         defend: clamp(value + Math.round((random() - .5) * 25), 20, 95),
         speed: clamp(value + Math.round((random() - .5) * 22), 25, 95),
-        stamina: 92
+        stamina: 92,
+        appearance: { skin: i % 6, hair: (i * 3) % 7, hairStyle: i % 5, build: (i + 1) % 3, accessory: i % 3 }
       };
     });
   }
@@ -156,7 +161,7 @@
       for (const opponent of opponents) {
         if (assigned.has(opponent.uid)) continue;
         const goalSide = { x: opponent.x - direction(defender.side) * 2.3, y: opponent.y };
-        const cost = distance(zone, goalSide) + (opponent.slot <= 4 ? 6 : 0);
+        const cost = distance(zone, goalSide) + (opponent.slot <= 4 ? 6 : 0) - (rating(defender, 'marking', defender.defend) - 50) * .03;
         if (cost < bestCost && cost < 25) { best = opponent; bestCost = cost; }
       }
       if (best) { marks.set(defender.uid, best); assigned.add(best.uid); }
@@ -206,7 +211,7 @@
       if (holder) {
         const supportX = holder.x + dir * (player.slot >= 8 ? 15 : player.slot >= 5 ? 4 : -11);
         const supportY = holder.y + clamp(base.y - holder.y, -24, 24) * .8;
-        const weight = clamp((37 - distance(player, holder)) / 40, 0, .65);
+        const weight = clamp((37 - distance(player, holder)) / 40, 0, .65) * (.8 + rating(player, 'offBall', player.speed) / 250);
         player.tx = clamp(shapeX * (1 - weight) + supportX * weight, 3, 102);
         player.ty = clamp(shapeY * (1 - weight) + supportY * weight, 3, 65);
       } else {
@@ -223,8 +228,8 @@
       const dy = player.ty - player.y;
       const d = Math.hypot(dx, dy);
       const chasing = holder && player.side !== holder.side && player.slot !== 0 && distance(player, holder) < 14;
-      const maxSpeed = (4.5 + 3.5 * player.speed / 100) * (chasing ? 1.13 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
-      const accel = player.slot === 0 ? 7 : 11;
+      const maxSpeed = (4.5 + 3.5 * rating(player, 'speed', player.speed) / 100) * (chasing ? 1.13 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
+      const accel = (player.slot === 0 ? 7 : 11) * (.75 + rating(player, 'acceleration', player.speed) / 250);
       const desiredX = d > .3 ? dx / d * maxSpeed : 0;
       const desiredY = d > .3 ? dy / d * maxSpeed : 0;
       player.vx += clamp(desiredX - player.vx, -accel * DT, accel * DT);
@@ -232,7 +237,8 @@
       player.x = clamp(player.x + player.vx * DT, 1, 104);
       player.y = clamp(player.y + player.vy * DT, 1, 67);
       const load = Math.hypot(player.vx, player.vy) / maxSpeed;
-      player.stamina = clamp(player.stamina - (player.slot === 0 ? .001 : .004) * load * DT * 30, 20, 100);
+      const endurance = rating(player, 'endurance', 70);
+      player.stamina = clamp(player.stamina - (player.slot === 0 ? .001 : .004) * load * DT * 30 * (1.2 - endurance / 350), 20, 100);
     }
   }
 
@@ -268,7 +274,9 @@
     for (const defender of defenders) {
       if (defender.slot === 0 || distance(defender, holder) > 2.6) continue;
       const press = defender.side === match.ownSide ? tactic.press : 50;
-      const chance = clamp(.11 + (defender.defend - holder.ovr) / 320 + press / 850, .04, .28);
+      const tackling = rating(defender, 'tackle', defender.defend);
+      const control = rating(holder, 'ballControl', holder.pass);
+      const chance = clamp(.11 + (tackling - control) / 320 + press / 850, .04, .28);
       const move = distance(defender, holder) > 1.7 ? 'slide' : 'tackle';
       if (match.tick % 18 === 0) recordAction(match, move, defender, move === 'slide' ? 1.15 : .8);
       if (random() < chance) {
@@ -302,7 +310,9 @@
         laneRisk = Math.max(laneRisk, Math.max(0, 4 - lateral));
       }
       const shortBonus = holder.side === match.ownSide && tactic.style === 'possession' ? (28 - d) * .3 : 0;
-      const score = forward * .34 - d * .52 + Math.min(space, 12) * 1.8 - laneRisk * 4 + shortBonus + random() * 4;
+      const vision = rating(holder, 'vision', holder.pass);
+      const decisions = rating(holder, 'decisions', (holder.pass + holder.defend) / 2);
+      const score = forward * .34 - d * .52 + Math.min(space, 12) * 1.8 - laneRisk * (2.8 + vision / 45) + shortBonus + random() * (7 - decisions / 20);
       if (score > bestScore) { bestScore = score; best = target; }
     }
     return best;
@@ -347,9 +357,11 @@
     const attackingTactic = holder.side === match.ownSide ? tactic.style : 'balanced';
     const shootBias = attackingTactic === 'counter' ? .07 : 0;
     if (holder.slot !== 0 && goalDistance < 32 && random() < clamp(.14 + (32 - goalDistance) / 80 + shootBias, .12, .5)) {
-      const error = (random() - .5) * (15 - holder.shoot / 9);
+      const accuracy = rating(holder, 'shotAccuracy', holder.shoot);
+      const power = rating(holder, 'shotPower', holder.shoot);
+      const error = (random() - .5) * (15 - accuracy / 9);
       const targetY = 34 + (random() - .5) * 5 + error;
-      kick(match, holder, holder.side === 0 ? 106 : -1, targetY, 24 + holder.shoot / 11, 'shot', random);
+      kick(match, holder, holder.side === 0 ? 106 : -1, targetY, 24 + power / 11, 'shot', random);
       match.shots[holder.side]++;
       event(match, `${holder.name} がシュート！`, 'shot');
       return;
@@ -358,10 +370,11 @@
     if (pressure < 6 || random() < passChance) {
       const receiver = findPass(match, holder, tactic, random);
       if (receiver) {
-        const error = (100 - holder.pass) / 35;
+        const passSkill = rating(holder, distance(holder, receiver) > 20 ? 'longPass' : 'shortPass', holder.pass);
+        const error = (100 - passSkill) / 35;
         const aimX = clamp(receiver.x + receiver.vx * .42 + (random() - .5) * error, 2, 103);
         const aimY = clamp(receiver.y + receiver.vy * .42 + (random() - .5) * error, 2, 66);
-        kick(match, holder, aimX, aimY, 14.5 + holder.pass / 10, 'pass', random);
+        kick(match, holder, aimX, aimY, 14.5 + passSkill / 10, 'pass', random);
         match.ball.intendedReceiver = receiver.uid;
         match.ball.passTarget = { x: aimX, y: aimY };
         return;
@@ -463,7 +476,8 @@
       return;
     }
     const nearby = match.players.filter(player => {
-      const radius = player.slot === 0 ? 3.1 : ball.kind === 'pass' && player.uid === ball.intendedReceiver ? 1.5 : ball.kind === 'pass' && player.side === ball.lastTouch ? 1.35 : 1.25;
+      const control = rating(player, 'ballControl', player.pass);
+      const radius = player.slot === 0 ? 3.1 : ball.kind === 'pass' && player.uid === ball.intendedReceiver ? 1.35 + control / 400 : ball.kind === 'pass' && player.side === ball.lastTouch ? 1.25 + control / 600 : 1.25;
       return distance(player, ball) < radius;
     });
     nearby.sort((a, b) => distance(a, ball) - distance(b, ball) - (a.uid === ball.intendedReceiver ? .2 : 0) + (b.uid === ball.intendedReceiver ? .2 : 0));
@@ -472,9 +486,11 @@
       if (ball.kind === 'shot' && player.uid === ball.shooter) continue;
       if (ball.kind === 'shot' && player.side !== ball.lastTouch) {
         if (player.slot === 0) {
-          const saveChance = clamp(.5 + player.ovr / 220 - speed / 110, .35, .85);
+          const reflexes = rating(player, 'reflexes', player.ovr);
+          const saving = rating(player, 'saving', player.ovr);
+          const saveChance = clamp(.42 + (reflexes + saving) / 440 - speed / 110, .35, .85);
           if (random() < saveChance) {
-            const catchBall = speed < 25 || random() < .55;
+            const catchBall = speed < 25 || random() < clamp(.25 + rating(player, 'catching', player.ovr) / 200, .3, .75);
             if (catchBall) {
               takePossession(match, player);
               match.ball.actionAt = match.seconds + 1;
