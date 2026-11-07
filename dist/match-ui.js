@@ -209,6 +209,12 @@ function drawMatch() {
     const dir = player.side === 0 ? 1 : -1;
     const own = player.side === match.ownSide;
     const keeper = player.slot === 0;
+    const look = appearanceFor(player);
+    const skin = skinPalette[look.skin];
+    const hair = hairPalette[look.hair];
+    const bodyWidth = [14, 16, 19][look.build];
+    const bodyHalf = Math.floor(bodyWidth / 2);
+    const heightOffset = Math.max(-1, Math.min(2, Math.round((player.heightCm - 175) / 10)));
     const stride = Math.abs(player.vx) + Math.abs(player.vy) > 1 ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 2) : 0;
     const shirt = keeper ? '#e7ad46' : own ? '#f8f3dc' : '#cf5650';
     const trim = keeper ? '#65452a' : own ? '#275c8d' : '#f4d7aa';
@@ -229,8 +235,10 @@ function drawMatch() {
       ctx.fillRect(x - dir * 9 - 6, y - 1, 17, 6);
       ctx.fillStyle = shirt;
       ctx.fillRect(x - 9, y - 7, 19, 9);
-      ctx.fillStyle = '#d69d69';
+      ctx.fillStyle = skin;
       ctx.fillRect(x + dir * 10 - 4, y - 9, 8, 8);
+      ctx.fillStyle = hair;
+      ctx.fillRect(x + dir * 10 - 4, y - 11, 8, 3);
       ctx.fillStyle = '#1d3340';
       ctx.fillRect(x + dir * 13, y + 1, 12, 3);
       ctx.fillStyle = '#e4cc91';
@@ -242,19 +250,29 @@ function drawMatch() {
     ctx.fillStyle = shorts;
     ctx.fillRect(x - 6, y + 3, 5, 7 + stride);
     ctx.fillRect(x + 1, y + 3, 5, 7 - stride);
-    ctx.fillStyle = '#d69d69';
-    ctx.fillRect(x - 10, y - 7, 4, 9);
-    ctx.fillRect(x + 6, y - 7, 4, 9);
+    ctx.fillStyle = skin;
+    ctx.fillRect(x - bodyHalf - 2, y - 7, 4, 9);
+    ctx.fillRect(x + bodyHalf - 2, y - 7, 4, 9);
     ctx.fillStyle = shirt;
-    ctx.fillRect(x - 8, y - 10, 16, 14);
+    ctx.fillRect(x - bodyHalf, y - 10 - heightOffset, bodyWidth, 14 + heightOffset);
     ctx.fillStyle = trim;
-    ctx.fillRect(x - 8, y - 9, 16, 3);
+    ctx.fillRect(x - bodyHalf, y - 9 - heightOffset, bodyWidth, 3);
     ctx.fillRect(x - 2, y - 6, 4, 8);
-    ctx.fillStyle = '#d69d69';
-    ctx.fillRect(x - 5, y - 18, 10, 9);
-    ctx.fillStyle = '#293034';
-    ctx.fillRect(x - 6, y - 20, 12, 4);
-    ctx.fillRect(x - 6, y - 17, 2, 4);
+    ctx.fillStyle = skin;
+    ctx.fillRect(x - 5, y - 18 - heightOffset, 10, 9);
+    ctx.fillStyle = hair;
+    ctx.fillRect(x - 6, y - 20 - heightOffset, 12, look.hairStyle === 2 ? 6 : 4);
+    ctx.fillRect(x - 6, y - 17 - heightOffset, 2, look.hairStyle === 1 ? 6 : 4);
+    if (look.hairStyle === 3 || look.hairStyle === 4) ctx.fillRect(x + 4, y - 18 - heightOffset, 2, 5);
+    if (look.hairStyle === 4) ctx.fillRect(x - 2, y - 22 - heightOffset, 6, 3);
+    if (look.accessory === 1) {
+      ctx.fillStyle = '#283638';
+      ctx.fillRect(x - 5, y - 14 - heightOffset, 4, 2);
+      ctx.fillRect(x + 1, y - 14 - heightOffset, 4, 2);
+    } else if (look.accessory === 2) {
+      ctx.fillStyle = '#eee8cb';
+      ctx.fillRect(x - 6, y - 18 - heightOffset, 12, 2);
+    }
     if (pose === 'pass' || pose === 'shot' || pose === 'tackle') {
       ctx.fillStyle = shorts;
       ctx.fillRect(x + dir * 5, y + 5, dir * 12, 4);
@@ -262,7 +280,7 @@ function drawMatch() {
       ctx.fillRect(x + dir * 14, y + 6, dir * 5, 3);
     }
     if (jump) {
-      ctx.fillStyle = '#d69d69';
+      ctx.fillStyle = skin;
       ctx.fillRect(x - 11, y - 21, 4, 13);
       ctx.fillRect(x + 7, y - 21, 4, 13);
       if (pose === 'punch') ctx.fillRect(x + dir * 8, y - 29, 5, 9);
@@ -361,7 +379,11 @@ function applyTraining(match) {
     player.stamina = clamp(player.stamina + rand(7, 13) + (theme === 'recovery' ? 18 : theme === 'fitness' ? 8 : 0), 35, 100);
     player.form = clamp(player.form + rand(-5, 5) + (appeared.has(player.id) ? 1 : 0), 40, 100);
     player.morale = clamp(player.morale + rand(-2, 3), 40, 100);
-    const growth = (player.age < 23 ? 12 : player.age < 28 ? 8 : 4) * (1 + state.facilities.training * .16) * (theme === 'recovery' ? .4 : 1);
+    const growthFactor = player.growthType === '早熟' ? (player.age < 23 ? 1.2 : .8) :
+      player.growthType === '晩成' ? (player.age >= 25 ? 1.2 : .8) :
+      player.growthType === '大器晩成' ? (player.age >= 27 ? 1.35 : .7) :
+      player.growthType === '波型' ? (state.round % 3 === 0 ? 1.25 : .9) : 1;
+    const growth = (player.age < 23 ? 12 : player.age < 28 ? 8 : 4) * (1 + state.facilities.training * .16) * (theme === 'recovery' ? .4 : 1) * growthFactor;
     player.xp += growth * (appeared.has(player.id) ? 1.2 : .8);
     if (player.xp >= 100 && player.ovr < player.potential) { player.xp -= 100; player.ovr++; gained++; }
     if (theme === 'attack') {
@@ -375,6 +397,7 @@ function applyTraining(match) {
       const focus = ['shoot', 'pass', 'defend', 'speed'][rand(0, 3)];
       player[focus] = clamp(player[focus] + 1, 1, 100);
     }
+    advanceDetailedAbilities(player, before, theme);
     report.push({
       id: player.id, name: player.name, pos: player.pos, training: theme,
       changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]]))
