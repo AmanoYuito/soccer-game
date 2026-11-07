@@ -19,6 +19,8 @@ const context = vm.createContext({
   clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
   addNews() {}
 });
+vm.runInContext(fs.readFileSync(require.resolve('../dist/player-data.js'), 'utf8'), context);
+for (const player of state.players) vm.runInContext(`enrichPlayer(state.players[${state.players.indexOf(player)}])`, context);
 vm.runInContext(fs.readFileSync(require.resolve('../dist/match-ui.js'), 'utf8'), context);
 const report = context.applyTraining({ ownSide: 0, appeared: [], players: [], exitStamina: {} });
 assert.equal(report.length, 4);
@@ -33,4 +35,6 @@ assert.equal(report[3].changes.shoot, 0);
 assert.equal(report[3].changes.defend, 0);
 assert.equal(report[3].changes.speed, 0);
 assert.equal(report[3].changes.stamina, 30);
+assert.ok(state.players[0].abilities.shotAccuracy > 0);
+assert.ok(state.players[1].abilities.tackle > 0);
 console.log('Individual training checks passed.');
