@@ -192,9 +192,21 @@ function drawMatch() {
   }
 
   const carrier = match.players.find(player => player.uid === match.ball.carrier);
+  const dribbling = carrier && match.ball.dribbleUntil > match.seconds;
+  if (dribbling) {
+    const dir = carrier.side === 0 ? 1 : -1;
+    const x = Math.round(px(carrier.x));
+    const y = Math.round(py(carrier.y));
+    ctx.fillStyle = '#f7e5a488';
+    for (let i = 1; i <= 3; i++) ctx.fillRect(x - dir * (9 + i * 9), y + 2 + (i % 2) * 3, 8 - i, 3);
+  }
   for (const player of [...match.players].sort((a, b) => a.y - b.y)) {
     const x = Math.round(px(player.x));
     const y = Math.round(py(player.y));
+    const action = [...match.visualActions].reverse().find(item => item.uid === player.uid && item.until > match.seconds);
+    const pose = action?.kind;
+    const jump = ['header', 'catch', 'punch'].includes(pose) ? Math.max(0, Math.round(Math.sin(Math.min(1, (match.seconds - action.start) / (action.until - action.start)) * Math.PI) * 15)) : 0;
+    const dir = player.side === 0 ? 1 : -1;
     const own = player.side === match.ownSide;
     const keeper = player.slot === 0;
     const stride = Math.abs(player.vx) + Math.abs(player.vy) > 1 ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 2) : 0;
@@ -210,6 +222,20 @@ function drawMatch() {
       ctx.fillStyle = '#fff49c';
       ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x - 5, y - 30); ctx.lineTo(x + 5, y - 30); ctx.fill();
     }
+    ctx.save();
+    ctx.translate(0, -jump);
+    if (pose === 'slide') {
+      ctx.fillStyle = shorts;
+      ctx.fillRect(x - dir * 9 - 6, y - 1, 17, 6);
+      ctx.fillStyle = shirt;
+      ctx.fillRect(x - 9, y - 7, 19, 9);
+      ctx.fillStyle = '#d69d69';
+      ctx.fillRect(x + dir * 10 - 4, y - 9, 8, 8);
+      ctx.fillStyle = '#1d3340';
+      ctx.fillRect(x + dir * 13, y + 1, 12, 3);
+      ctx.fillStyle = '#e4cc91';
+      ctx.fillRect(x - dir * 10, y + 9, 4, 2);
+    } else {
     ctx.fillStyle = '#1d3340';
     ctx.fillRect(x - 7, y + 8 + stride, 5, 3);
     ctx.fillRect(x + 2, y + 8 - stride, 5, 3);
@@ -229,7 +255,34 @@ function drawMatch() {
     ctx.fillStyle = '#293034';
     ctx.fillRect(x - 6, y - 20, 12, 4);
     ctx.fillRect(x - 6, y - 17, 2, 4);
-    if (carrier === player && matchCamera === 'follow') {
+    if (pose === 'pass' || pose === 'shot' || pose === 'tackle') {
+      ctx.fillStyle = shorts;
+      ctx.fillRect(x + dir * 5, y + 5, dir * 12, 4);
+      ctx.fillStyle = '#1d3340';
+      ctx.fillRect(x + dir * 14, y + 6, dir * 5, 3);
+    }
+    if (jump) {
+      ctx.fillStyle = '#d69d69';
+      ctx.fillRect(x - 11, y - 21, 4, 13);
+      ctx.fillRect(x + 7, y - 21, 4, 13);
+      if (pose === 'punch') ctx.fillRect(x + dir * 8, y - 29, 5, 9);
+    }
+    }
+    ctx.restore();
+    if (pose) {
+      const labels = {pass:'パス',shot:'シュート',tackle:'タックル',slide:'スライディング',header:'ヘディング',catch:'キャッチ',punch:'パンチング'};
+      const label = labels[pose];
+      if (label) {
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        const labelWidth = ctx.measureText(label).width + 14;
+        ctx.fillStyle = pose === 'shot' ? '#7d3e2eeb' : '#173e2ceb';
+        ctx.fillRect(x - labelWidth / 2, y - jump - 43, labelWidth, 15);
+        ctx.fillStyle = pose === 'shot' ? '#fff1cf' : '#ffe998';
+        ctx.fillText(label, x, y - jump - 31);
+      }
+    }
+    if (carrier === player && matchCamera === 'follow' && !pose) {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       const name = player.name.split(' ')[0];
@@ -240,14 +293,53 @@ function drawMatch() {
       ctx.fillText(name, x, y - 36);
     }
   }
+  if (dribbling) {
+    const x = Math.round(px(carrier.x));
+    const y = Math.round(py(carrier.y));
+    ctx.fillStyle = '#173e2cdd';
+    ctx.fillRect(x - 29, y - 58, 58, 16);
+    ctx.fillStyle = '#ffe898';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ドリブル', x, y - 46);
+  }
+  if (match.highlight && match.seconds < match.highlight.until) {
+    const flash = match.highlight;
+    const x = Math.round(px(flash.x));
+    const y = Math.round(py(flash.y));
+    const life = (flash.until - match.seconds) / (flash.kind === 'tackle' ? 1.4 : 1.15);
+    ctx.strokeStyle = '#ffe276';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 12 + (1 - life) * 19, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#183e31ee';
+    ctx.fillRect(x - 24, y - 75, 48, 17);
+    ctx.fillStyle = '#ffe276';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('奪取！', x, y - 62);
+  }
+  if (match.ball.trail?.length && (dribbling || !carrier)) {
+    ctx.fillStyle = '#fff9cf88';
+    for (const [i, dot] of match.ball.trail.entries()) {
+      const size = 2 + Math.round(i / 2);
+      ctx.fillRect(Math.round(px(dot.x)) - size / 2, Math.round(py(dot.y)) - size / 2, size, size);
+    }
+  }
   const bx = Math.round(px(match.ball.x));
   const by = Math.round(py(match.ball.y));
+  const flight = match.ball.airborneUntil > match.seconds && match.ball.flightDuration > 0
+    ? Math.sin(Math.PI * (match.seconds - match.ball.flightStart) / match.ball.flightDuration) * 21 : 0;
+  const holdAction = carrier && [...match.visualActions].reverse().find(item => item.uid === carrier.uid && item.until > match.seconds);
+  const heldHeight = holdAction && ['header', 'catch'].includes(holdAction.kind) ? 17 : 0;
+  const ballY = by - Math.max(0, Math.round(flight), heldHeight);
   ctx.fillStyle = '#21432b88';
   ctx.fillRect(bx - 4, by + 3, 9, 3);
   ctx.fillStyle = '#fffdf1';
-  ctx.fillRect(bx - 5, by - 5, 10, 10);
+  ctx.fillRect(bx - 5, ballY - 5, 10, 10);
   ctx.fillStyle = '#243b34';
-  ctx.fillRect(bx - 1, by - 1, 3, 3);
+  ctx.fillRect(bx - 1, ballY - 1, 3, 3);
   ctx.restore();
 }
 
@@ -287,22 +379,38 @@ function showTacticDialog() {
 function applyTraining(match) {
   let gained = 0;
   const appeared = new Set(match.appeared);
+  const report = [];
   for (const player of state.players) {
+    const before = Object.fromEntries(['ovr', 'shoot', 'pass', 'defend', 'speed', 'stamina'].map(key => [key, player[key]]));
+    const theme = playerTrainingTheme(player);
     const current = match.players.find(onField => onField.sourceId === player.id && onField.side === match.ownSide);
     const exitStamina = match.exitStamina[player.id];
     const matchStamina = current ? current.stamina : exitStamina;
     if (appeared.has(player.id) && matchStamina !== undefined) player.stamina = Math.round(matchStamina);
-    player.stamina = clamp(player.stamina + rand(7, 13) + (state.training === 'recovery' ? 18 : 0), 35, 100);
+    player.stamina = clamp(player.stamina + rand(7, 13) + (theme === 'recovery' ? 18 : theme === 'fitness' ? 8 : 0), 35, 100);
     player.form = clamp(player.form + rand(-5, 5) + (appeared.has(player.id) ? 1 : 0), 40, 100);
     player.morale = clamp(player.morale + rand(-2, 3), 40, 100);
-    const growth = (player.age < 23 ? 12 : player.age < 28 ? 8 : 4) * (1 + state.facilities.training * .16) * (state.training === 'recovery' ? .4 : 1);
+    const growth = (player.age < 23 ? 12 : player.age < 28 ? 8 : 4) * (1 + state.facilities.training * .16) * (theme === 'recovery' ? .4 : 1);
     player.xp += growth * (appeared.has(player.id) ? 1.2 : .8);
     if (player.xp >= 100 && player.ovr < player.potential) { player.xp -= 100; player.ovr++; gained++; }
-    if (state.training === 'attack') { player.shoot = clamp(player.shoot + rand(0, 1), 1, 100); player.pass = clamp(player.pass + rand(0, 1), 1, 100); }
-    if (state.training === 'defense') player.defend = clamp(player.defend + rand(0, 1), 1, 100);
-    if (state.training === 'fitness') player.speed = clamp(player.speed + rand(0, 1), 1, 100);
+    if (theme === 'attack') {
+      player.shoot = clamp(player.shoot + rand(1, 2), 1, 100);
+      player.pass = clamp(player.pass + rand(0, 1), 1, 100);
+    } else if (theme === 'defense') {
+      player.defend = clamp(player.defend + rand(1, 2), 1, 100);
+    } else if (theme === 'fitness') {
+      player.speed = clamp(player.speed + rand(1, 2), 1, 100);
+    } else if (theme === 'balanced') {
+      const focus = ['shoot', 'pass', 'defend', 'speed'][rand(0, 3)];
+      player[focus] = clamp(player[focus] + 1, 1, 100);
+    }
+    report.push({
+      id: player.id, name: player.name, pos: player.pos, training: theme,
+      changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]]))
+    });
   }
   if (gained) addNews(`${gained}人の選手の総合能力が上昇しました。`);
+  return report;
 }
 
 function finishMatch() {
@@ -325,7 +433,7 @@ function finishMatch() {
     const player = state.players.find(item => item.id === id);
     if (player) player.goals++;
   }
-  applyTraining(match);
+  state.lastGrowth = { round: state.round + 1, players: applyTraining(match) };
   const ownGoals = match.ownSide === 0 ? match.hg : match.ag;
   const opponentGoals = match.ownSide === 0 ? match.ag : match.hg;
   const won = ownGoals > opponentGoals;
@@ -340,7 +448,7 @@ function finishMatch() {
   view = 'home';
   persist();
   render();
-  showDialog(`<div class="eyebrow">FULL TIME</div><h2>試合終了</h2><div class="summary-score">${escapeHTML(result.home)} ${match.hg} - ${match.ag} ${escapeHTML(result.away)}</div><p>シュート ${match.shots[0]} - ${match.shots[1]} · 支配率 ${match.possession}% - ${100 - match.possession}%<br>交代 ${match.subsUsed}人 · 現在の順位 ${sortedTable().findIndex(team => team.id === 0) + 1}位 / 12クラブ</p><button class="btn primary" data-action="closeDialog">ホームへ戻る →</button>`);
+  showDialog(`<div class="eyebrow">FULL TIME</div><h2>試合終了</h2><div class="summary-score">${escapeHTML(result.home)} ${match.hg} - ${match.ag} ${escapeHTML(result.away)}</div><p>シュート ${match.shots[0]} - ${match.shots[1]} · 支配率 ${match.possession}% - ${100 - match.possession}%<br>交代 ${match.subsUsed}人 · 現在の順位 ${sortedTable().findIndex(team => team.id === 0) + 1}位 / 12クラブ</p><h3 class="growth-title">選手ごとの能力上昇と体力の変化</h3><p class="growth-hint">全${state.lastGrowth.players.length}人。枠内をスクロールして確認できます。</p>${growthReportHTML(state.lastGrowth)}<div class="btn-row" style="margin-top:18px"><button class="btn primary" data-action="closeDialog">ホームへ戻る →</button><button class="btn" data-action="openTrainingReport">育成画面で見る</button></div>`);
 }
 
 document.addEventListener('click', event => {
