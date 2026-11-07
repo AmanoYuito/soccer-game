@@ -269,20 +269,7 @@ function drawMatch() {
     }
     }
     ctx.restore();
-    if (pose) {
-      const labels = {pass:'パス',shot:'シュート',tackle:'タックル',slide:'スライディング',header:'ヘディング',catch:'キャッチ',punch:'パンチング'};
-      const label = labels[pose];
-      if (label) {
-        ctx.font = 'bold 11px sans-serif';
-        ctx.textAlign = 'center';
-        const labelWidth = ctx.measureText(label).width + 14;
-        ctx.fillStyle = pose === 'shot' ? '#7d3e2eeb' : '#173e2ceb';
-        ctx.fillRect(x - labelWidth / 2, y - jump - 43, labelWidth, 15);
-        ctx.fillStyle = pose === 'shot' ? '#fff1cf' : '#ffe998';
-        ctx.fillText(label, x, y - jump - 31);
-      }
-    }
-    if (carrier === player && matchCamera === 'follow' && !pose) {
+    if (carrier === player && matchCamera === 'follow') {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       const name = player.name.split(' ')[0];
@@ -292,16 +279,6 @@ function drawMatch() {
       ctx.fillStyle = '#fff8dd';
       ctx.fillText(name, x, y - 36);
     }
-  }
-  if (dribbling) {
-    const x = Math.round(px(carrier.x));
-    const y = Math.round(py(carrier.y));
-    ctx.fillStyle = '#173e2cdd';
-    ctx.fillRect(x - 29, y - 58, 58, 16);
-    ctx.fillStyle = '#ffe898';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ドリブル', x, y - 46);
   }
   if (match.highlight && match.seconds < match.highlight.until) {
     const flash = match.highlight;
@@ -313,12 +290,6 @@ function drawMatch() {
     ctx.beginPath();
     ctx.arc(x, y, 12 + (1 - life) * 19, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = '#183e31ee';
-    ctx.fillRect(x - 24, y - 75, 48, 17);
-    ctx.fillStyle = '#ffe276';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('奪取！', x, y - 62);
   }
   if (match.ball.trail?.length && (dribbling || !carrier)) {
     ctx.fillStyle = '#fff9cf88';
