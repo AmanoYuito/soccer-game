@@ -19,6 +19,9 @@ function rankBadgeHTML(value, label = '') {
   const number = Math.max(1, Math.min(100, Math.round(Number(value) || 1)));
   return `<span class="rank-badge rank-${grade}" aria-label="${escapeHTML(label)} ${grade}ランク ${number}"><b>${grade}</b><small>${number}</small></span>`;
 }
+function specialAbilityBadges(player, limit = 3) {
+  return `<span class="special-badges">${(player.specialAbilities || []).slice(0, limit).map(item => `<span class="special-badge" title="${escapeHTML(specialAbilityCatalog[item.id]?.[1] || '')}">${escapeHTML(specialAbilityCatalog[item.id]?.[0] || item.id)} <b>Lv.${item.level}</b></span>`).join('')}</span>`;
+}
 
 function team() {
   const slots = fieldSlots();
@@ -36,7 +39,7 @@ function team() {
   const rows = list.map(player => {
     const index = state.players.indexOf(player);
     return `<div class="lineup-candidate ${index === selectedLineupSlot ? 'current' : ''}">
-      ${portraitSVG(player)}<div class="lineup-candidate-info"><strong>${escapeHTML(player.name)}</strong><small>${index < 11 ? `先発 ${index + 1}` : '控え'} · ${escapeHTML(player.pos)} · 適性${Math.round(positionFit(player.pos, targetPos) * 100)}%</small><span class="candidate-stamina ${player.stamina < 50 ? 'low' : ''}"><i style="width:${player.stamina}%"></i></span></div>
+      ${portraitSVG(player)}<div class="lineup-candidate-info"><strong>${escapeHTML(player.name)}</strong><small>${index < 11 ? `先発 ${index + 1}` : '控え'} · ${escapeHTML(player.pos)} · 適性${Math.round(positionFit(player.pos, targetPos) * 100)}%</small>${specialAbilityBadges(player, 1)}<span class="candidate-stamina ${player.stamina < 50 ? 'low' : ''}"><i style="width:${player.stamina}%"></i></span></div>
       ${rankBadgeHTML(player.ovr, '総合')}<div class="lineup-candidate-actions"><button class="btn sm" data-action="selectPlayer" data-id="${player.id}" aria-label="${escapeHTML(player.name)}の能力を見る">能力</button><button class="btn primary sm" data-action="assignSlot" data-id="${player.id}" ${index === selectedLineupSlot ? 'disabled' : ''}>${index === selectedLineupSlot ? '起用中' : '起用'}</button></div></div>`;
   }).join('');
   return `<div class="console-screen lineup-screen">${pageHead('TEAM SELECTION','チーム編成','ピッチの位置を選び、右の選手を「起用」で入れ替えます。')}
@@ -79,6 +82,7 @@ function playerDialog(id) {
     <div class="player-profile-head">${portraitSVG(player, true)}<div><h2>${escapeHTML(player.name)}</h2><p>#${player.number} · ${escapeHTML(player.pos)} · ${player.age}歳 · ${isStarter ? '先発' : '控え'}</p><p>${player.heightCm}cm / ${player.weightKg}kg · ${player.preferredFoot}利き · ${player.growthType}</p></div></div>
     <div class="profile-stat-grid">${abilityCards}</div>
     <div class="profile-info"><span>体力 <b>${Math.round(player.stamina)}%</b></span><span>調子 <b>${rankOf(player.form)} ${player.form}</b></span><span>士気 <b>${rankOf(player.morale)} ${player.morale}</b></span><span>将来性の推定 <b>${rankOf(player.potential)} ${player.potential}</b></span>${fit === null ? '' : `<span>今の配置への適性 <b>${fit}%</b></span>`}</div>
+    <h3 class="profile-section-title">特殊能力 <small>Lv.1〜3</small></h3><div class="special-profile">${(player.specialAbilities || []).map(item => `<div><strong>${escapeHTML(specialAbilityCatalog[item.id]?.[0] || item.id)} <b>Lv.${item.level}</b></strong><small>${escapeHTML(specialAbilityCatalog[item.id]?.[1] || '')}</small></div>`).join('')}</div>
     <h3 class="profile-section-title">詳しい能力 <small>数値は1〜100</small></h3>${details}
     <details class="appearance-section"><summary>見た目を変える <span>髪・肌・体格・アクセサリー</span></summary>
       <div class="appearance-editor" data-player-id="${player.id}"><div class="appearance-preview" id="appearance-preview">${portraitSVG(player, true)}</div><div class="appearance-fields">
