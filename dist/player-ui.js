@@ -1,5 +1,18 @@
 /* A compact squad view and detailed, graded player sheet. */
 let rosterSort = 'lineup';
+let selectedLineupSlot = 9;
+
+function swapIntoLineup(players, formation, slot, playerId) {
+  const index = players.findIndex(player => player.id === playerId);
+  if (index < 0 || slot < 0 || slot >= 11 || index === slot) return false;
+  if ((players[index].pos === 'GK') !== (formations[formation]?.[slot] === 'GK')) return false;
+  [players[slot], players[index]] = [players[index], players[slot]];
+  if (players.slice(0, 11).filter(player => player.pos === 'GK').length !== 1) {
+    [players[slot], players[index]] = [players[index], players[slot]];
+    return false;
+  }
+  return true;
+}
 
 function rankBadgeHTML(value, label = '') {
   const grade = rankOf(value);
@@ -8,26 +21,32 @@ function rankBadgeHTML(value, label = '') {
 }
 
 function team() {
-  const positions = [...new Set(state.players.map(player => player.pos))];
-  const list = state.players.filter((player, index) => filter === 'all' ||
-    (filter === 'starter' ? index < 11 : player.pos === filter));
+  const slots = fieldSlots();
+  selectedLineupSlot = Math.max(0, Math.min(10, selectedLineupSlot));
+  const targetPos = formations[state.formation][selectedLineupSlot];
+  const target = state.players[selectedLineupSlot];
+  const isKeeperSlot = targetPos === 'GK';
+  const list = state.players.filter((player, index) => (player.pos === 'GK') === isKeeperSlot &&
+    (filter === 'all' || (filter === 'starter' ? index < 11 : player.pos === filter)));
   if (rosterSort === 'ovr') list.sort((a, b) => b.ovr - a.ovr);
   if (rosterSort === 'stamina') list.sort((a, b) => b.stamina - a.stamina);
   if (rosterSort === 'age') list.sort((a, b) => a.age - b.age);
-  const cards = list.map(player => {
-    const isStarter = state.players.indexOf(player) < 11;
-    return `<article class="roster-card">
-      <div class="roster-card-top"><span class="tag ${isStarter ? '' : 'blue'}">${isStarter ? '先発' : '控え'}</span><span class="roster-number">#${player.number}</span><span class="roster-pos">${escapeHTML(player.pos)}</span></div>
-      <div class="roster-identity">${portraitSVG(player, true)}<div class="roster-name"><strong>${escapeHTML(player.name)}</strong><span>${player.age}歳 · ${player.preferredFoot}利き · ${player.heightCm}cm</span></div><div class="roster-overall">${rankBadgeHTML(player.ovr, '総合')}</div></div>
-      <div class="roster-stats"><div><span>シュート</span>${rankBadgeHTML(player.shoot)}</div><div><span>パス</span>${rankBadgeHTML(player.pass)}</div><div><span>守備</span>${rankBadgeHTML(player.defend)}</div><div><span>速さ</span>${rankBadgeHTML(player.speed)}</div></div>
-      <div class="roster-footer"><span>体力 ${staminaBar(player.stamina)}</span><button class="btn sm" data-action="selectPlayer" data-id="${player.id}">能力を見る →</button></div>
-    </article>`;
+  const slotButtons = slots.map((slot, index) => `<button class="lineup-token ${selectedLineupSlot === index ? 'selected' : ''} ${slot.player.stamina < 50 ? 'tired' : ''}" style="left:${slot.x}%;top:${slot.y}%" data-action="selectSlot" data-slot="${index}" aria-label="${formations[state.formation][index]} ${escapeHTML(slot.player.name)}を選ぶ">
+    ${portraitSVG(slot.player)}<span class="lineup-token-text"><b>${escapeHTML(slot.player.name.split(' ')[0])}</b><small>${formations[state.formation][index]} · ${rankOf(slot.player.ovr)}</small></span></button>`).join('');
+  const rows = list.map(player => {
+    const index = state.players.indexOf(player);
+    return `<div class="lineup-candidate ${index === selectedLineupSlot ? 'current' : ''}">
+      ${portraitSVG(player)}<div class="lineup-candidate-info"><strong>${escapeHTML(player.name)}</strong><small>${index < 11 ? `先発 ${index + 1}` : '控え'} · ${escapeHTML(player.pos)} · 適性${Math.round(positionFit(player.pos, targetPos) * 100)}%</small><span class="candidate-stamina ${player.stamina < 50 ? 'low' : ''}"><i style="width:${player.stamina}%"></i></span></div>
+      ${rankBadgeHTML(player.ovr, '総合')}<div class="lineup-candidate-actions"><button class="btn sm" data-action="selectPlayer" data-id="${player.id}" aria-label="${escapeHTML(player.name)}の能力を見る">能力</button><button class="btn primary sm" data-action="assignSlot" data-id="${player.id}" ${index === selectedLineupSlot ? 'disabled' : ''}>${index === selectedLineupSlot ? '起用中' : '起用'}</button></div></div>`;
   }).join('');
-  return `${pageHead('SQUAD MANAGEMENT','選手一覧','能力はS〜Gで評価。「能力を見る」から詳細と見た目を確認できます。')}
-    <div class="roster-toolbar"><label>表示 <select class="field" id="team-filter"><option value="all" ${filter === 'all' ? 'selected' : ''}>全選手</option><option value="starter" ${filter === 'starter' ? 'selected' : ''}>先発</option>${positions.map(pos => `<option value="${escapeHTML(pos)}" ${filter === pos ? 'selected' : ''}>${escapeHTML(pos)}</option>`).join('')}</select></label>
-      <label>並び順 <select class="field" id="team-sort"><option value="lineup" ${rosterSort === 'lineup' ? 'selected' : ''}>登録順</option><option value="ovr" ${rosterSort === 'ovr' ? 'selected' : ''}>総合の高い順</option><option value="stamina" ${rosterSort === 'stamina' ? 'selected' : ''}>体力の高い順</option><option value="age" ${rosterSort === 'age' ? 'selected' : ''}>年齢の若い順</option></select></label>
-      <span class="subtle">${list.length}人 · S 90以上 / A 80〜89 / B 70〜79 / C 60〜69 / D 50〜59 / E以下 49以下</span></div>
-    <div class="roster-grid">${cards}</div>`;
+  return `<div class="console-screen lineup-screen">${pageHead('TEAM SELECTION','チーム編成','ピッチの位置を選び、右の選手を「起用」で入れ替えます。')}
+    <div class="console-layout"><section class="console-panel lineup-board"><div class="console-panel-heading"><div><small>STARTING XI</small><h2>先発の11人</h2></div><label>布陣 <select class="field" id="lineup-formation" aria-label="フォーメーション">${Object.keys(formations).map(value => `<option value="${value}" ${state.formation === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div>
+      <div class="lineup-pitch"><div class="lineup-lines"></div>${slotButtons}</div>
+      <div class="lineup-selected"><span class="lineup-step">選択中</span>${portraitSVG(target)}<div><strong>${escapeHTML(target.name)}</strong><small>${targetPos} · 適性${Math.round(positionFit(target.pos, targetPos) * 100)}% · 体力${Math.round(target.stamina)}%</small></div>${rankBadgeHTML(target.ovr, '総合')}</div>
+    </section><section class="console-panel lineup-list-panel"><div class="console-panel-heading"><div><small>PLAYERS</small><h2>${targetPos}の候補</h2></div><span class="console-count">${list.length}人</span></div>
+      <div class="lineup-filters"><label>表示<select class="field" id="team-filter"><option value="all" ${filter === 'all' ? 'selected' : ''}>全選手</option><option value="starter" ${filter === 'starter' ? 'selected' : ''}>先発</option>${[...new Set(state.players.map(player => player.pos))].filter(pos => (pos === 'GK') === isKeeperSlot).map(pos => `<option value="${escapeHTML(pos)}" ${filter === pos ? 'selected' : ''}>${escapeHTML(pos)}</option>`).join('')}</select></label><label>並び順<select class="field" id="team-sort"><option value="lineup" ${rosterSort === 'lineup' ? 'selected' : ''}>登録順</option><option value="ovr" ${rosterSort === 'ovr' ? 'selected' : ''}>総合順</option><option value="stamina" ${rosterSort === 'stamina' ? 'selected' : ''}>体力順</option><option value="age" ${rosterSort === 'age' ? 'selected' : ''}>年齢順</option></select></label></div>
+      <div class="lineup-candidates">${rows || '<p class="console-empty">この条件の候補はいません。表示を「全選手」にしてください。</p>'}</div></section></div>
+    <p class="console-footnote">選手の位置適性と体力を見て布陣を決めましょう。起用の変更は自動保存されます。</p></div>`;
 }
 
 function abilitySectionHTML(group, player, open = false) {
@@ -77,6 +96,11 @@ function playerDialog(id) {
 
 document.addEventListener('change', event => {
   if (event.target.id === 'team-sort') { rosterSort = event.target.value; render(); }
+  if (event.target.id === 'lineup-formation' && Object.hasOwn(formations, event.target.value)) {
+    state.formation = event.target.value;
+    persist();
+    render();
+  }
   if (!event.target.closest('.appearance-editor')) return;
   const editor = event.target.closest('.appearance-editor');
   const player = state?.players.find(item => String(item.id) === editor.dataset.playerId);
@@ -86,6 +110,25 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const slotButton = event.target.closest('[data-action="selectSlot"]');
+  if (slotButton && state) {
+    selectedLineupSlot = Number(slotButton.dataset.slot);
+    filter = 'all';
+    render();
+    return;
+  }
+  const assignButton = event.target.closest('[data-action="assignSlot"]');
+  if (assignButton && state) {
+    const player = state.players.find(item => item.id === Number(assignButton.dataset.id));
+    if (!player || !swapIntoLineup(state.players, state.formation, selectedLineupSlot, player.id)) {
+      showToast('この位置には起用できません。GKはGKの位置にしてください。');
+      return;
+    }
+    persist();
+    render();
+    showToast(`${player.name}を先発に起用しました`);
+    return;
+  }
   const button = event.target.closest('[data-action="saveAppearance"]');
   if (!button || !state) return;
   const player = state.players.find(item => item.id === Number(button.dataset.id));
