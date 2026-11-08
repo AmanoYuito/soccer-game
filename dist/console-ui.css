@@ -161,11 +161,18 @@ body.in-match .app-shell{background:linear-gradient(#d7e6c2,#b9cfa9)}
 .match-bench-groups h3{margin:0 0 7px;font-size:12px;color:#4c7550}
 .match-bench-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .match-bench-player{display:flex;align-items:center;gap:7px;min-width:0;border:1px solid #b7c99b;background:#f1f0d4;border-radius:4px;padding:5px}
-.match-bench-player .player-portrait{width:32px;height:32px;border-width:1px}
-.match-bench-player>div{display:grid;gap:2px;min-width:0;flex:1}
+.match-bench-player{width:100%;text-align:left;color:#29432e;font-family:inherit;cursor:pointer;min-height:58px;border-width:2px;border-bottom-width:4px}
+.match-bench-player:hover:not(:disabled){background:#e5efbb;border-color:#5d925e}
+.match-bench-player.selected{background:#f6dc8c;border-color:#a7733e;box-shadow:inset 0 0 0 2px #fff5cb}
+.match-bench-player:disabled{opacity:1;cursor:default}
+.match-bench-player:disabled .match-bench-action{color:#84947a;background:#e2e4cd}
+.match-bench-player:focus-visible{outline:3px solid #d98344;outline-offset:2px}
+.match-bench-player .player-portrait{width:44px;height:44px;border-width:1px}
+.match-bench-person{display:grid;gap:3px;min-width:0;flex:1}
 .match-bench-player strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .match-bench-player small{font-size:9px;color:#6b8060}
-.match-bench-player>b{font-size:9px;color:#537453;white-space:nowrap}
+.match-bench-action{font-size:10px;color:#28573a;white-space:nowrap;background:#dcecae;border:1px solid #87ae73;padding:4px 5px;border-radius:3px}
+.match-swap-hint{margin:0;padding:9px 11px;border:2px solid #aac393;background:#e8efce;color:#315b3c;font-size:11px;font-weight:900;line-height:1.5}
 .match-bench-empty{font-size:11px;color:#5c7358}
 .match-tray-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .match-tray-stats>div{display:grid;gap:7px;text-align:center;background:#eaf0d3;border:2px solid #b5c9a3;border-radius:4px;padding:16px 6px}
@@ -177,11 +184,18 @@ body.in-match .app-shell{background:linear-gradient(#d7e6c2,#b9cfa9)}
 .match-tray-log .minute{display:inline;margin-right:8px;color:#59825c}
 .match-help{margin:10px 2px 15px;color:#3c6547;font-size:11px;font-weight:800;line-height:1.5}
 .goal-replay{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;padding:20px;background:#0b241de8;backdrop-filter:blur(6px)}
-.replay-card{width:min(1020px,100%);max-height:calc(100dvh - 30px);overflow:auto;background:#f7edc9;border:6px solid #f7d677;box-shadow:0 0 0 7px #234b39,0 18px 0 #112e22,0 30px 80px #07170e;color:#23432f}
+.replay-card{width:min(1020px,120dvh,100%);max-height:calc(100dvh - 30px);overflow:auto;background:#f7edc9;border:6px solid #f7d677;box-shadow:0 0 0 7px #234b39,0 18px 0 #112e22,0 30px 80px #07170e;color:#23432f}
 .replay-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 20px;background:#f5e4aa;border-bottom:4px solid #9eb375}
 .replay-heading small{font:900 11px ui-monospace,monospace;letter-spacing:.17em;color:#b14e33}
 .replay-heading h2{margin:2px 0;font-size:28px;line-height:1.1;color:#244735}
 .replay-heading p{margin:2px 0 0;font-size:12px;font-weight:800;color:#667856}
+.replay-title{min-width:0}
+.replay-credits{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.replay-credit{display:flex;align-items:center;gap:8px;min-width:150px;padding:5px 10px 5px 5px;background:#fff8dc;border:2px solid #b5c489;border-radius:4px}
+.replay-credit .player-portrait{width:45px;height:45px;border-width:1px}
+.replay-credit span{display:grid;gap:2px;min-width:0}
+.replay-credit small{color:#5d865b;font-size:9px;letter-spacing:.05em}
+.replay-credit strong{font-size:14px;color:#254731;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .replay-score{flex:none;background:#285b43;color:#fff4d4;border:3px solid #174130;padding:8px 18px;font:1000 29px ui-monospace,monospace;box-shadow:3px 3px 0 #9d9c6d}
 .replay-score span{color:#f5d76d;margin:0 13px}
 .replay-card canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;image-rendering:pixelated;background:#508a40}
@@ -193,6 +207,7 @@ body.in-match .app-shell{background:linear-gradient(#d7e6c2,#b9cfa9)}
 .replay-skip:hover{background:#eff9b9}
 .replay-skip:focus-visible{outline:3px solid #d97642;outline-offset:3px}
 @media(max-width:600px){.goal-replay{padding:8px}.replay-card{border-width:4px}.replay-heading{padding:8px 10px}.replay-heading h2{font-size:19px}.replay-heading p{font-size:10px}.replay-score{font-size:18px;padding:6px 8px}.replay-score span{margin:0 5px}.replay-footer{gap:6px;padding:7px;flex-wrap:wrap}.replay-footer>span{display:none}.replay-skip{font-size:10px;padding:7px 8px}}
+@media(max-width:600px){.replay-credit{min-width:0;padding:3px 6px 3px 3px}.replay-credit .player-portrait{width:35px;height:35px}.replay-credit strong{font-size:11px}.replay-credits{gap:4px}}
 @media(max-width:1100px){.console-layout{grid-template-columns:1fr}.lineup-candidates,.training-selectors{max-height:400px}}
 @media(max-width:780px){body.console-view .content{padding:20px 12px 45px}.console-screen .page-head h1{font-size:26px}.console-panel{padding:12px}.match-app{padding:9px 9px 38px}.match-bench-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.match-tray-top{align-items:start;flex-direction:column}.match-tray-tabs{width:100%}.match-tray-tabs button{flex:1}.match-control-deck{margin-bottom:12px}}
 @media(max-width:510px){.lineup-pitch{aspect-ratio:1.12}.lineup-token{width:54px;min-height:49px;display:grid;justify-items:center;gap:0}.lineup-token .player-portrait{width:24px;height:24px}.lineup-token-text b{font-size:8px}.lineup-token-text small{font-size:7px}.lineup-selected{gap:5px}.lineup-step{display:none}.lineup-selected small{font-size:9px}.training-menu-grid{grid-template-columns:1fr}.training-menu-card{min-height:78px}.training-core-stats{gap:3px}.training-core-stats>span{font-size:9px}.match-bench-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.match-tray{padding:9px;border-width:3px}.match-tray-tabs button{padding:7px 4px;font-size:10px}.match-tray-stats{grid-template-columns:repeat(2,1fr)}.match-tray-stats strong{font-size:15px}}
