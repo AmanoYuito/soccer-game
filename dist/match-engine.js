@@ -16,6 +16,7 @@
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const direction = side => side === 0 ? 1 : -1;
   const rating = (player, key, fallback) => Number.isFinite(player.abilities?.[key]) ? player.abilities[key] : fallback;
+  const specialLevel = (player, id) => player.specialAbilities?.find(item => item.id === id)?.level || 0;
 
   function slots(formation) {
     const rows = FORMATIONS[formation] || FORMATIONS['4-3-3'];
@@ -53,6 +54,7 @@
       speed: source.speed,
       stamina: source.stamina,
       abilities: source.abilities ? { ...source.abilities } : null,
+      specialAbilities: source.specialAbilities ? source.specialAbilities.map(item => ({ ...item })) : [],
       appearance: source.appearance ? { ...source.appearance } : null,
       heightCm: source.heightCm || 175
     };
@@ -74,7 +76,8 @@
         defend: clamp(value + Math.round((random() - .5) * 25), 20, 95),
         speed: clamp(value + Math.round((random() - .5) * 22), 25, 95),
         stamina: 92,
-        appearance: { skin: i % 6, hair: (i * 3) % 7, hairStyle: i % 5, build: (i + 1) % 3, accessory: i % 3 }
+        appearance: { skin: i % 6, hair: (i * 3) % 7, hairStyle: i % 5, build: (i + 1) % 3, accessory: i % 3 },
+        specialAbilities: i === 0 ? [{ id: 'shotStopper', level: 1 }] : i === 9 ? [{ id: 'midRangeShot', level: 2 }] : i === 8 ? [{ id: 'dribbler', level: 1 }] : []
       };
     });
   }
@@ -107,7 +110,7 @@
   function create(options) {
     const { home, away, ownPlayers, formation, opponentStrength, random } = options;
     const ownSide = home === 0 ? 0 : 1;
-    const opponent = makeOpponent(opponentStrength, random);
+    const opponent = options.opponentPlayers || makeOpponent(opponentStrength, random);
     const homeRoster = ownSide === 0 ? ownPlayers : opponent;
     const awayRoster = ownSide === 1 ? ownPlayers : opponent;
     const match = {
@@ -328,7 +331,7 @@
       player.y = clamp(player.y + player.vy * DT, 1, 67);
       const load = Math.hypot(player.vx, player.vy) / maxSpeed;
       const endurance = rating(player, 'endurance', 70);
-      player.stamina = clamp(player.stamina - (player.slot === 0 ? .001 : .004) * load * DT * 30 * (1.2 - endurance / 350), 20, 100);
+      player.stamina = clamp(player.stamina - (player.slot === 0 ? .001 : .004) * load * DT * 30 * (1.2 - endurance / 350) * (1 - .12 * specialLevel(player, 'ironman')), 20, 100);
     }
   }
 
@@ -352,7 +355,8 @@
     match.ball.assistUid = null;
     match.ball.vx = 0;
     match.ball.vy = 0;
-    match.ball.actionAt = match.seconds + .35;
+    player.receivedAt = match.seconds;
+    match.ball.actionAt = match.seconds + (specialLevel(player, 'oneTouchPass') ? .16 : .35);
     match.ball.dribbleUntil = 0;
     match.ball.airborneUntil = 0;
     match.ball.intendedReceiver = null;
@@ -401,7 +405,7 @@
     const dribble = rating(holder, 'dribbling', (holder.speed + holder.pass) / 2);
     const marking = rating(defender, 'marking', defender.defend);
     const tackling = rating(defender, 'tackle', defender.defend);
-    const success = clamp(.5 + (control + agility + dribble - marking - tackling - 65) / 420, .28, .8);
+    const success = clamp(.5 + (control + agility + dribble - marking - tackling - 65) / 420 + .04 * specialLevel(holder, 'dribbler'), .28, .88);
     if (random() >= success) {
       holder.skillCooldownUntil = match.seconds + .8;
       return false;
@@ -506,8 +510,9 @@
     const attackingTactic = holder.side === match.ownSide ? tactic.style : 'balanced';
     const shootBias = attackingTactic === 'counter' ? .07 : 0;
     if (holder.slot !== 0 && goalDistance < 32 && random() < clamp(.14 + (32 - goalDistance) / 80 + shootBias, .12, .5)) {
-      const accuracy = rating(holder, 'shotAccuracy', holder.shoot);
-      const power = rating(holder, 'shotPower', holder.shoot);
+      const middleBonus = goalDistance >= 18 ? 3 * specialLevel(holder, 'midRangeShot') : 0;
+      const accuracy = Math.min(100, rating(holder, 'shotAccuracy', holder.shoot) + middleBonus);
+      const power = Math.min(100, rating(holder, 'shotPower', holder.shoot) + middleBonus);
       const error = (random() - .5) * (15 - accuracy / 9);
       const targetY = 34 + (random() - .5) * 5 + error;
       kick(match, holder, holder.side === 0 ? 106 : -1, targetY, 24 + power / 11, 'shot', random);
@@ -519,7 +524,8 @@
     if (pressure < 6 || random() < passChance) {
       const receiver = findPass(match, holder, tactic, random);
       if (receiver) {
-        const passSkill = rating(holder, distance(holder, receiver) > 20 ? 'longPass' : 'shortPass', holder.pass);
+        const oneTouchBonus = match.seconds - holder.receivedAt <= 1 ? 3 * specialLevel(holder, 'oneTouchPass') : 0;
+        const passSkill = Math.min(100, rating(holder, distance(holder, receiver) > 20 ? 'longPass' : 'shortPass', holder.pass) + oneTouchBonus);
         const error = (100 - passSkill) / 35;
         const aimX = clamp(receiver.x + receiver.vx * .42 + (random() - .5) * error, 2, 103);
         const aimY = clamp(receiver.y + receiver.vy * .42 + (random() - .5) * error, 2, 66);
@@ -545,6 +551,12 @@
       const outgoing = match.players.find(p => p.sourceId === sub.outId && p.side === match.ownSide);
       if (!outgoing || match.usedBench.includes(sub.inPlayer.id) || match.subsUsed >= 5) continue;
       const replacement = makePlayer(sub.inPlayer, match.ownSide, outgoing.slot, Number(String(outgoing.uid).split('-')[1]), match.formation);
+      const boost = match.minute >= 45 ? 3 * specialLevel(replacement, 'superSub') : 0;
+      if (boost) {
+        for (const key of ['ovr', 'shoot', 'pass', 'defend', 'speed']) replacement[key] = clamp(replacement[key] + boost, 1, 100);
+        if (replacement.abilities) for (const key of Object.keys(replacement.abilities)) replacement.abilities[key] = clamp(replacement.abilities[key] + boost, 1, 100);
+        replacement.superSubBoost = boost;
+      }
       replacement.x = outgoing.x;
       replacement.y = outgoing.y;
       replacement.vx = outgoing.vx;
@@ -557,7 +569,7 @@
       match.usedBench.push(sub.inPlayer.id);
       match.appeared.push(sub.inPlayer.id);
       match.subsUsed++;
-      executed.push(`${outgoing.name} → ${replacement.name}`);
+      executed.push(`${outgoing.name} → ${replacement.name}${boost ? `（スーパーサブ +${boost}）` : ''}`);
     }
     if (executed.length && !isHalftime) match.windowsUsed++;
     if (executed.length) event(match, `交代 ${executed.join('、')}`, 'sub');
@@ -648,7 +660,7 @@
     const nearby = match.players.filter(player => {
       const control = rating(player, 'ballControl', player.pass);
       const radius = player.slot === 0 ? 3.1 : ball.kind === 'pass' && player.uid === ball.intendedReceiver ? 1.35 + control / 400 : ball.kind === 'pass' && player.side === ball.lastTouch ? 1.25 + control / 600 : 1.25;
-      return distance(player, ball) < radius;
+      return distance(player, ball) < radius + (ball.kind === 'pass' && match.seconds < ball.airborneUntil ? .07 * specialLevel(player, 'aerial') : 0);
     });
     nearby.sort((a, b) => distance(a, ball) - distance(b, ball) - (a.uid === ball.intendedReceiver ? .2 : 0) + (b.uid === ball.intendedReceiver ? .2 : 0));
     for (const player of nearby) {
@@ -658,7 +670,7 @@
         if (player.slot === 0) {
           const reflexes = rating(player, 'reflexes', player.ovr);
           const saving = rating(player, 'saving', player.ovr);
-          const saveChance = clamp(.42 + (reflexes + saving) / 440 - speed / 110, .35, .85);
+          const saveChance = clamp(.42 + (reflexes + saving) / 440 - speed / 110 + .035 * specialLevel(player, 'shotStopper'), .35, .9);
           if (random() < saveChance) {
             const catchBall = speed < 25 || random() < clamp(.25 + rating(player, 'catching', player.ovr) / 200, .3, .75);
             if (catchBall) {
@@ -697,7 +709,7 @@
           takePossession(match, player, player.side !== ball.lastTouch ? 'intercept' : 'receive');
           recordAction(match, 'header', player, 1.1);
           match.actionCounts.headers++;
-          match.ball.actionAt = match.seconds + .65;
+          match.ball.actionAt = match.seconds + .65 - .12 * specialLevel(player, 'aerial');
           event(match, `${player.name} がジャンプしてヘディング！`, 'header');
           return;
         }
