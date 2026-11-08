@@ -85,6 +85,7 @@
   }
 
   function kickoff(match, side) {
+    match.assistCandidate = null;
     match.players.forEach(player => {
       const base = match.baseSlots[player.side][player.slot];
       player.x = player.side === 0 ? base.x : LENGTH - base.x;
@@ -114,7 +115,7 @@
       seconds: 0, minute: 0, tick: 0,
       hg: 0, ag: 0, shots: [0, 0], possessionSeconds: [0, 0], possession: 50,
       events: [], paused: false, speed: 1, committed: false, finished: false,
-      highlight: null, goalFlash: null, goalMoment: null,
+      highlight: null, goalFlash: null, goalMoment: null, assistCandidate: null,
       actionCounts: { dribbles: 0, feints: 0, nutmegs: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, completedPasses: 0, shots: 0 },
       visualActions: [],
       halftime: false, subsUsed: 0, windowsUsed: 0, queuedSubs: [],
@@ -339,9 +340,16 @@
   function takePossession(match, player, kind = 'receive') {
     const oldSide = match.ball.lastTouch;
     if (match.ball.kind === 'pass' && oldSide === player.side) match.actionCounts.completedPasses++;
+    match.assistCandidate = match.ball.kind === 'pass' && oldSide === player.side &&
+      match.ball.passBy && match.ball.passBy !== player.uid
+      ? { uid: match.ball.passBy, receiverUid: player.uid, side: player.side,
+          receivedAt: match.seconds, x: player.x, y: player.y }
+      : null;
     match.ball.carrier = player.uid;
     match.ball.kind = 'controlled';
     match.ball.lastTouch = player.side;
+    match.ball.passBy = null;
+    match.ball.assistUid = null;
     match.ball.vx = 0;
     match.ball.vy = 0;
     match.ball.actionAt = match.seconds + .35;
@@ -455,10 +463,18 @@
     const dx = targetX - holder.x;
     const dy = targetY - holder.y;
     const d = Math.max(.1, Math.hypot(dx, dy));
+    const candidate = match.assistCandidate;
+    const assistUid = kind === 'shot' && candidate?.receiverUid === holder.uid &&
+      candidate.side === holder.side && match.seconds - candidate.receivedAt <= 7 &&
+      Math.hypot(holder.x - candidate.x, holder.y - candidate.y) <= 22
+      ? candidate.uid : null;
+    match.assistCandidate = null;
     match.ball.carrier = null;
     match.ball.kind = kind;
     match.ball.lastTouch = holder.side;
     match.ball.shooter = kind === 'shot' ? holder.uid : null;
+    match.ball.assistUid = assistUid;
+    match.ball.passBy = kind === 'pass' ? holder.uid : null;
     match.ball.kicker = holder.uid;
     match.ball.intendedReceiver = null;
     match.ball.passTarget = null;
@@ -600,9 +616,12 @@
         if (goalSide === 0) match.hg++; else match.ag++;
         match.goalFlash = { side: goalSide, start: match.seconds, until: match.seconds + 1.5 };
         const scorer = match.players.find(p => p.uid === ball.shooter);
+        const assistant = ball.assistUid && ball.assistUid !== ball.shooter
+          ? match.players.find(p => p.uid === ball.assistUid && p.side === goalSide) : null;
         match.goalMoment = {
           seconds: match.seconds, minute: match.minute, ownSide: match.ownSide,
           hg: match.hg, ag: match.ag, scorerName: scorer?.name || '選手',
+          assistName: assistant?.name || null, assistUid: assistant?.uid || null,
           players: match.players.map(player => ({ ...player, appearance: player.appearance ? { ...player.appearance } : null })),
           ball: { ...ball, trail: ball.trail.map(dot => ({ ...dot })) },
           visualActions: match.visualActions.map(action => ({ ...action })),
@@ -651,6 +670,7 @@
             } else {
               ball.carrier = null;
               ball.kind = 'free';
+              match.assistCandidate = null;
               ball.lastTouch = player.side;
               ball.vx = direction(player.side) * 14;
               ball.vy = (random() - .5) * 12;
@@ -664,6 +684,7 @@
           }
         } else if (random() < .5) {
           event(match, `${player.name} がシュートをブロック。`);
+          match.assistCandidate = null;
           ball.vx *= -.45;
           ball.vy += (random() - .5) * 9;
           ball.kind = 'free';
