@@ -1,6 +1,6 @@
 /* Match presentation and manager controls. The engine owns all positions and outcomes. */
 let matchSeed = 0;
-let matchCamera = 'full';
+let matchCamera = 'follow';
 let matchWasPaused = false;
 let matchInfoTab = 'bench';
 let selectedMatchSubOutId = null;
@@ -94,7 +94,7 @@ function startMatch() {
   lastMatchBenchTick = -30;
   replayFrames = [];
   closeGoalReplay(false);
-  matchCamera = window.matchMedia('(max-width:780px)').matches ? 'follow' : 'full';
+  matchCamera = 'follow';
   activeMatch = MatchEngine.create({
     home: fixture[0],
     away: fixture[1],
@@ -372,7 +372,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const pitch = { x: 44, y: 36, w: 872, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'follow' ? 1.72 : 1;
+  const zoom = camera === 'follow' ? 1.95 : 1;
   const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
   const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
@@ -592,6 +592,27 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
   drawBallIllustration(ctx, bx, ballY, by, spin);
   ctx.restore();
+  if (camera === 'follow' && canvas.id === 'match-canvas') {
+    const mini = { x: width - 195, y: 16, w: 175, h: 112 };
+    ctx.fillStyle = '#143a2ee9';
+    ctx.fillRect(mini.x - 5, mini.y - 5, mini.w + 10, mini.h + 10);
+    ctx.fillStyle = '#578f4b';
+    ctx.fillRect(mini.x, mini.y, mini.w, mini.h);
+    ctx.strokeStyle = '#e9efc5';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(mini.x + 2, mini.y + 2, mini.w - 4, mini.h - 4);
+    ctx.beginPath();ctx.moveTo(mini.x + mini.w / 2, mini.y);ctx.lineTo(mini.x + mini.w / 2, mini.y + mini.h);ctx.stroke();
+    const vx = mini.x + (focusX - width / (2 * zoom) - pitch.x) / pitch.w * mini.w;
+    const vy = mini.y + (focusY - height / (2 * zoom) - pitch.y) / pitch.h * mini.h;
+    ctx.strokeStyle = '#ffe181';
+    ctx.strokeRect(vx, vy, width / zoom / pitch.w * mini.w, height / zoom / pitch.h * mini.h);
+    for (const player of match.players) {
+      ctx.fillStyle = player.side === match.ownSide ? '#f7efd4' : '#d45b4d';
+      ctx.fillRect(mini.x + player.x / 105 * mini.w - 2, mini.y + player.y / 68 * mini.h - 2, 4, 4);
+    }
+    ctx.fillStyle = '#ffdf65';
+    ctx.beginPath();ctx.arc(mini.x + match.ball.x / 105 * mini.w, mini.y + match.ball.y / 68 * mini.h, 3.3, 0, Math.PI * 2);ctx.fill();
+  }
 }
 
 function showHalftimeDialog() {
@@ -660,9 +681,11 @@ function applyTraining(match) {
       player[focus] = clamp(player[focus] + 1, 1, 100);
     }
     advanceDetailedAbilities(player, before, theme);
+    const special = advanceSpecialTraining(player, theme, appeared.has(player.id), state.facilities.training);
+    if (special?.level) addNews(`${player.name}が「${specialAbilityCatalog[special.id][0]}」を${special.learned ? '習得' : `Lv.${special.level}に強化`}しました。`);
     report.push({
       id: player.id, name: player.name, pos: player.pos, training: theme,
-      changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]]))
+      changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]])), special
     });
   }
   if (gained) addNews(`${gained}人の選手の総合能力が上昇しました。`);
