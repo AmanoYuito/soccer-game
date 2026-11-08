@@ -31,6 +31,7 @@ function run(seed, batchSize) {
   const { match, random } = create(seed);
   const tactic = { style: 'balanced', press: 50, tempo: 50 };
   let goalMoments = 0;
+  const goalCredits = [];
   while (!match.finished) {
     for (let i = 0; i < batchSize && !match.finished; i++) {
       const goalsBefore = match.hg + match.ag;
@@ -40,6 +41,11 @@ function run(seed, batchSize) {
         assert.equal(match.goalMoment.players.length, 22, 'replay keeps all players before kickoff resets them');
         assert.equal(match.goalMoment.ball.kind, 'shot');
         assert.equal(match.goalMoment.hg + match.goalMoment.ag, match.hg + match.ag);
+        if (match.goalMoment.assistUid) {
+          assert.notEqual(match.goalMoment.assistUid, match.goalMoment.ball.shooter);
+          assert.equal(match.goalMoment.players.find(player => player.uid === match.goalMoment.assistUid)?.name, match.goalMoment.assistName);
+        }
+        goalCredits.push([match.goalMoment.scorerName, match.goalMoment.assistName]);
       }
       if (match.tick % 300 === 0) {
         assert.equal(match.players.length, 22);
@@ -58,7 +64,8 @@ function run(seed, batchSize) {
     possession: match.possession,
     events: match.events,
     actions: match.actionCounts,
-    goalMoments
+    goalMoments,
+    goalCredits
   };
 }
 
@@ -101,6 +108,30 @@ assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes
   assert.ok(actions.completedPasses / actions.passes > .7, 'most selected passes should reach a teammate');
   assert.ok(actions.feints > 0 && actions.nutmegs > 0, 'both skill moves should occur against defenders');
   assert.equal(run(42, 3).goalMoments, run(42, 3).score.reduce((sum, goals) => sum + goals, 0));
+  assert.ok(run(42, 3).goalCredits.some(([, assist]) => assist), 'a completed final pass can produce an assist');
+  assert.ok(run(42, 3).goalCredits.some(([, assist]) => !assist), 'solo goals should not invent an assist');
+}
+
+{
+  const { match, random } = create();
+  const passer = match.players.find(player => player.side === 0 && player.slot === 6);
+  const receiver = match.players.find(player => player.side === 0 && player.slot === 9);
+  receiver.x = 84;
+  receiver.y = 34;
+  match.ball = { ...match.ball, carrier: null, kind: 'pass', lastTouch: 0,
+    passBy: passer.uid, intendedReceiver: receiver.uid, passTarget: { x: 84, y: 34 },
+    x: 84, y: 34, vx: 0, vy: 0, ignoreUntil: 0, airborneUntil: 0 };
+  MatchEngine.step(match, random, { style: 'balanced', press: 50, tempo: 50 });
+  assert.equal(match.assistCandidate?.uid, passer.uid, 'the final passer is remembered on reception');
+  assert.equal(match.assistCandidate?.receiverUid, receiver.uid);
+  const opponent = match.players.find(player => player.side === 1 && player.slot === 2);
+  opponent.x = 80;
+  opponent.y = 34;
+  match.ball = { ...match.ball, carrier: null, kind: 'pass', lastTouch: 0,
+    passBy: receiver.uid, intendedReceiver: null, x: 80, y: 34,
+    vx: 0, vy: 0, ignoreUntil: 0, airborneUntil: 0 };
+  MatchEngine.step(match, random, { style: 'balanced', press: 50, tempo: 50 });
+  assert.equal(match.assistCandidate, null, 'an opponent touch cancels the assist');
 }
 
 {
