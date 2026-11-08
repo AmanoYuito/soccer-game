@@ -2,6 +2,8 @@
 let matchSeed = 0;
 let matchCamera = 'full';
 let matchWasPaused = false;
+let matchInfoTab = 'bench';
+let lastMatchBenchTick = -30;
 function matchRandom() {
   let value = matchSeed | 0;
   value ^= value << 13;
@@ -24,11 +26,18 @@ function matchStaminaHTML(match) {
     .join('');
 }
 
+function matchTrayHTML(match) {
+  if (matchInfoTab === 'stats') return `<div class="match-tray-stats"><div><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div><span>交代</span><strong id="subs-status">${match.subsUsed}/5人 · ${match.windowsUsed}/3回</strong></div></div>`;
+  if (matchInfoTab === 'log') return `<div class="match-tray-log" id="events">${eventHTML(match.events.slice(-14)) || '<p>キックオフを待っています。</p>'}</div>`;
+  const onField = match.players.filter(player => player.side === match.ownSide).sort((a, b) => a.slot - b.slot);
+  const bench = state.players.filter(player => !match.appeared.includes(player.id));
+  const tile = (player, label) => `<div class="match-bench-player">${portraitSVG(player)}<div><strong>${escapeHTML(player.name)}</strong><small>${escapeHTML(player.pos)} · ${label}</small><span class="match-bench-stamina ${player.stamina < 45 ? 'low' : ''}"><i style="width:${Math.round(player.stamina)}%"></i></span></div><b>${Math.round(player.stamina)}%</b></div>`;
+  return `<div class="match-bench-groups"><div><h3>ピッチの11人</h3><div class="match-bench-grid">${onField.map(player => tile(player, `#${player.number}`)).join('')}</div></div><div><h3>控え</h3><div class="match-bench-grid">${bench.map(player => tile(player, `#${player.number}`)).join('') || '<p class="match-bench-empty">交代できる控えはいません。</p>'}</div></div></div>`;
+}
+
 function matchView() {
   if (!activeMatch) return home();
   const match = activeMatch;
-  const substitutions = `${match.subsUsed}/5人 · ${match.windowsUsed}/3回`;
-  const queued = match.queuedSubs.length ? ` · 予約 ${match.queuedSubs.length}人` : '';
   const latest = match.events[match.events.length - 1];
   return `<div class="match-app">
     <div class="match-topline"><span>ASTERIA ${state.division} DIVISION <i></i> 第${state.round + 1}節</span><span class="match-live-dot">● LIVE MATCH</span></div>
@@ -37,26 +46,15 @@ function matchView() {
       <div class="hud-center"><div class="hud-score"><span id="home-score">${match.hg}</span><b>:</b><span id="away-score">${match.ag}</span></div><div class="hud-clock" id="match-clock">${matchClock(match)}</div></div>
       <div class="hud-team hud-away ${match.ownSide === 1 ? 'hud-own' : ''}"><div><small>AWAY</small><strong>${escapeHTML(state.clubs[match.away].name)}</strong></div><span class="hud-kit hud-kit-away">${escapeHTML(state.clubs[match.away].name.slice(0, 1))}</span></div>
     </div>
-    <div class="match-columns">
-      <div class="match-primary">
-        <div class="stadium-frame">
-          <canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
-          <button class="stadium-corner-label" data-action="camera">${matchCamera === 'full' ? 'ボールを追う' : '全体を見る'} <span>↻</span></button>
-          <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
-        </div>
-        <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
-        <div class="match-control-deck">
-          <button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button>
-          <button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button>
-          <button class="deck-button deck-manager-button" data-action="managerMenu">⚑ 監督メニュー</button>
-        </div>
+    <div class="match-columns"><div class="match-primary">
+      <div class="stadium-frame"><canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
+        <button class="stadium-corner-label" data-action="camera">${matchCamera === 'full' ? 'ボールを追う' : '全体を見る'} <span>↻</span></button>
+        <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
       </div>
-      <aside class="match-aside">
-        <div class="match-aside-card"><div class="aside-heading"><span>試合データ</span><small>MATCH DATA</small></div><div class="stat-line"><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div class="stat-line"><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div class="stat-line"><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div class="stat-line"><span>交代</span><strong id="subs-status">${substitutions}${queued}</strong></div></div>
-        <details class="match-aside-card stamina-card"><summary class="aside-heading"><span>選手の体力を見る</span><small>▼</small></summary><div class="match-stamina" id="match-stamina">${matchStaminaHTML(match)}</div></details>
-        <details class="match-aside-card match-log-card"><summary class="aside-heading"><span>試合の記録を見る</span><small>▼</small></summary><div class="events" id="events">${eventHTML(match.events)}</div></details>
-      </aside>
-    </div>
+      <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
+      <div class="match-control-deck"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button><button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button><button class="deck-button deck-manager-button" data-action="managerMenu">⚑ 監督メニュー</button></div>
+    </div></div>
+    <section class="match-tray" aria-label="試合情報"><div class="match-tray-top"><div><small>COACH'S BENCH</small><h2>監督席</h2></div><div class="match-tray-tabs">${[['bench','ベンチ'],['stats','試合情報'],['log','試合記録']].map(([id,label]) => `<button data-action="matchTab" data-tab="${id}" class="${matchInfoTab === id ? 'active' : ''}" aria-pressed="${matchInfoTab === id}">${label}</button>`).join('')}</div></div><div id="match-tray-content">${matchTrayHTML(match)}</div></section>
   </div>`;
 }
 
@@ -73,6 +71,8 @@ function startMatch() {
   }
   const opponentId = fixture[0] === 0 ? fixture[1] : fixture[0];
   matchSeed = state.seed;
+  matchInfoTab = 'bench';
+  lastMatchBenchTick = -30;
   matchCamera = window.matchMedia('(max-width:780px)').matches ? 'follow' : 'full';
   activeMatch = MatchEngine.create({
     home: fixture[0],
@@ -84,6 +84,7 @@ function startMatch() {
   });
   view = 'match';
   render();
+  window.scrollTo(0, 0);
   clearInterval(matchTimer);
   matchTimer = setInterval(tickMatch, 100);
 }
@@ -110,10 +111,14 @@ function tickMatch() {
 function updateMatchUI() {
   const match = activeMatch;
   if (!match) return;
+  if (matchInfoTab === 'bench' && match.tick - lastMatchBenchTick >= 30 && $('#match-tray-content')) {
+    $('#match-tray-content').innerHTML = matchTrayHTML(match);
+    lastMatchBenchTick = match.tick;
+  }
   if ($('#home-score')) $('#home-score').textContent = match.hg;
   if ($('#away-score')) $('#away-score').textContent = match.ag;
   if ($('#match-clock')) $('#match-clock').textContent = matchClock(match);
-  if ($('#events')) $('#events').innerHTML = eventHTML(match.events);
+  if ($('#events')) $('#events').innerHTML = eventHTML(match.events.slice(-14));
   if ($('#shots')) $('#shots').textContent = `${match.shots[0]} - ${match.shots[1]}`;
   if ($('#possession')) $('#possession').textContent = `${match.possession}% - ${100 - match.possession}%`;
   if ($('#live-style')) $('#live-style').textContent = styleLabel(state.style);
@@ -449,6 +454,11 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
+  if (action === 'matchTab' && ['bench', 'stats', 'log'].includes(button.dataset.tab)) {
+    matchInfoTab = button.dataset.tab;
+    render();
+    return;
+  }
   if (action === 'camera') {
     matchCamera = matchCamera === 'full' ? 'follow' : 'full';
     render();
