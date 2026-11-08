@@ -30,9 +30,17 @@ function create(seed = 42) {
 function run(seed, batchSize) {
   const { match, random } = create(seed);
   const tactic = { style: 'balanced', press: 50, tempo: 50 };
+  let goalMoments = 0;
   while (!match.finished) {
     for (let i = 0; i < batchSize && !match.finished; i++) {
+      const goalsBefore = match.hg + match.ag;
       MatchEngine.step(match, random, tactic);
+      if (match.hg + match.ag > goalsBefore) {
+        goalMoments++;
+        assert.equal(match.goalMoment.players.length, 22, 'replay keeps all players before kickoff resets them');
+        assert.equal(match.goalMoment.ball.kind, 'shot');
+        assert.equal(match.goalMoment.hg + match.goalMoment.ag, match.hg + match.ag);
+      }
       if (match.tick % 300 === 0) {
         assert.equal(match.players.length, 22);
         for (const player of match.players) {
@@ -49,7 +57,8 @@ function run(seed, batchSize) {
     shots: match.shots,
     possession: match.possession,
     events: match.events,
-    actions: match.actionCounts
+    actions: match.actionCounts,
+    goalMoments
   };
 }
 
@@ -61,6 +70,8 @@ assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes
     assert.ok(actions[kind] > 0, `${kind} must occur in the match simulation`);
   }
   assert.ok(actions.completedPasses / actions.passes > .7, 'most selected passes should reach a teammate');
+  assert.ok(actions.feints > 0 && actions.nutmegs > 0, 'both skill moves should occur against defenders');
+  assert.equal(run(42, 3).goalMoments, run(42, 3).score.reduce((sum, goals) => sum + goals, 0));
 }
 
 {
