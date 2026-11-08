@@ -3,6 +3,7 @@ let matchSeed = 0;
 let matchCamera = 'full';
 let matchWasPaused = false;
 let matchInfoTab = 'bench';
+let selectedMatchSubOutId = null;
 let lastMatchBenchTick = -30;
 let replayFrames = [];
 let goalReplay = null;
@@ -35,8 +36,20 @@ function matchTrayHTML(match) {
   if (matchInfoTab === 'log') return `<div class="match-tray-log" id="events">${eventHTML(match.events.slice(-14)) || '<p>キックオフを待っています。</p>'}</div>`;
   const onField = match.players.filter(player => player.side === match.ownSide).sort((a, b) => a.slot - b.slot);
   const bench = state.players.filter(player => !match.appeared.includes(player.id));
-  const tile = (player, label) => `<div class="match-bench-player">${portraitSVG(player)}<div><strong>${escapeHTML(player.name)}</strong><small>${escapeHTML(player.pos)} · ${label}</small><span class="match-bench-stamina ${player.stamina < 45 ? 'low' : ''}"><i style="width:${Math.round(player.stamina)}%"></i></span></div><b>${Math.round(player.stamina)}%</b></div>`;
-  return `<div class="match-bench-groups"><div><h3>ピッチの11人</h3><div class="match-bench-grid">${onField.map(player => tile(player, `#${player.number}`)).join('')}</div></div><div><h3>控え</h3><div class="match-bench-grid">${bench.map(player => tile(player, `#${player.number}`)).join('') || '<p class="match-bench-empty">交代できる控えはいません。</p>'}</div></div></div>`;
+  const selected = onField.find(player => player.sourceId === selectedMatchSubOutId);
+  const canSub = match.subsUsed + match.queuedSubs.length < 5 && (match.windowsUsed < 3 || match.halftimePause);
+  const tile = (player, reserve) => {
+    const queued = match.queuedSubs.some(sub => reserve ? sub.inPlayer.id === player.id : sub.outId === player.sourceId);
+    const compatible = selected && (selected.pos === 'GK') === (player.pos === 'GK');
+    const disabled = !canSub || queued || (reserve && !compatible);
+    const action = reserve ? 'confirmMatchSub' : 'selectMatchSub';
+    const label = queued ? '予約済' : reserve ? '入れる' : player.sourceId === selectedMatchSubOutId ? '選択中' : '交代';
+    return `<button class="match-bench-player ${player.sourceId === selectedMatchSubOutId && !reserve ? 'selected' : ''}" data-action="${action}" data-id="${reserve ? player.id : player.sourceId}" ${disabled ? 'disabled' : ''} aria-label="${escapeHTML(player.name)} ${label}">${portraitSVG(player)}<span class="match-bench-person"><strong>${escapeHTML(player.name)}</strong><small>${escapeHTML(player.pos)} · #${player.number} · 体力${Math.round(player.stamina)}%</small><span class="match-bench-stamina ${player.stamina < 45 ? 'low' : ''}"><i style="width:${Math.round(player.stamina)}%"></i></span></span><b class="match-bench-action">${label}</b></button>`;
+  };
+  const hint = !canSub ? '交代枠または交代機会を使い切りました。' : selected
+    ? `${escapeHTML(selected.name)}に代わる控えを選んでください。${selected.pos === 'GK' ? 'GK同士で交代できます。' : ''}`
+    : '交代したいピッチ上の選手を選び、次に控えを選んでください。';
+  return `<div class="match-bench-groups"><p class="match-swap-hint">⇄ ${hint}${match.halftimePause ? ' ハーフタイム中はすぐ交代します。' : ' 試合中は次のプレー停止時に交代します。'}</p><div><h3>ピッチの11人</h3><div class="match-bench-grid">${onField.map(player => tile(player, false)).join('')}</div></div><div><h3>控え</h3><div class="match-bench-grid">${bench.map(player => tile(player, true)).join('') || '<p class="match-bench-empty">交代できる控えはいません。</p>'}</div></div></div>`;
 }
 
 function matchView() {
@@ -56,7 +69,7 @@ function matchView() {
         <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
       </div>
       <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
-      <div class="match-control-deck"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button><button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button><button class="deck-button deck-manager-button" data-action="managerMenu">⚑ 監督メニュー</button></div>
+      <div class="match-control-deck"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="${match.halftimePause ? 'resumeHalf' : 'pause'}">${match.halftimePause ? '▶ 後半開始' : match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button><button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button><button class="deck-button deck-manager-button" data-action="matchTactics">⚑ 戦術変更</button></div>
       <p class="match-help">選手は自動でプレーします。監督は速度・戦術・交代を選べます。ゴール後はリプレイを再生します。</p>
     </div></div>
     <section class="match-tray" aria-label="試合情報"><div class="match-tray-top"><div><small>COACH'S BENCH</small><h2>監督席</h2></div><div class="match-tray-tabs">${[['bench','ベンチ'],['stats','試合情報'],['log','試合記録']].map(([id,label]) => `<button data-action="matchTab" data-tab="${id}" class="${matchInfoTab === id ? 'active' : ''}" aria-pressed="${matchInfoTab === id}">${label}</button>`).join('')}</div></div><div id="match-tray-content">${matchTrayHTML(match)}</div></section>
@@ -77,6 +90,7 @@ function startMatch() {
   const opponentId = fixture[0] === 0 ? fixture[1] : fixture[0];
   matchSeed = state.seed;
   matchInfoTab = 'bench';
+  selectedMatchSubOutId = null;
   lastMatchBenchTick = -30;
   replayFrames = [];
   closeGoalReplay(false);
@@ -146,6 +160,8 @@ function startGoalReplay(match) {
   closeGoalReplay(false);
   const moment = match.goalMoment;
   if (!moment) return;
+  const scorer = moment.players.find(player => player.uid === moment.ball.shooter);
+  const assistant = moment.assistUid ? moment.players.find(player => player.uid === moment.assistUid) : null;
   const frames = replayFrames.filter(frame => frame && frame.seconds >= moment.seconds - 7 && frame.seconds <= moment.seconds);
   if (!frames.length || frames[frames.length - 1] !== moment) frames.push(moment);
   const wasPaused = match.paused;
@@ -157,7 +173,7 @@ function startGoalReplay(match) {
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', 'ゴールリプレイ');
-  overlay.innerHTML = `<div class="replay-card"><div class="replay-heading"><div><small>GOAL! · REPLAY</small><h2>ゴールリプレイ</h2><p>${escapeHTML(moment.scorerName)}の得点シーン</p></div><div class="replay-score">${match.hg}<span>–</span>${match.ag}</div></div><canvas id="replay-canvas" width="960" height="540" aria-label="得点直前のリプレイ映像"></canvas><div class="replay-footer"><div class="replay-progress"><i id="replay-progress-fill"></i></div><span>自動で試合に戻ります</span><button class="replay-skip" data-action="skipReplay">▶ 試合へ戻る</button></div></div>`;
+  overlay.innerHTML = `<div class="replay-card"><div class="replay-heading"><div class="replay-title"><small>GOAL! · REPLAY</small><h2>ゴールリプレイ</h2><div class="replay-credits"><div class="replay-credit">${scorer ? portraitSVG(scorer, true) : ''}<span><small>得点者</small><strong>${escapeHTML(moment.scorerName)}</strong></span></div>${assistant ? `<div class="replay-credit">${portraitSVG(assistant, true)}<span><small>アシスト</small><strong>${escapeHTML(moment.assistName)}</strong></span></div>` : ''}</div></div><div class="replay-score">${match.hg}<span>–</span>${match.ag}</div></div><canvas id="replay-canvas" width="960" height="540" aria-label="得点直前のリプレイ映像"></canvas><div class="replay-footer"><div class="replay-progress"><i id="replay-progress-fill"></i></div><span>自動で試合に戻ります</span><button class="replay-skip" data-action="skipReplay">▶ 試合へ戻る</button></div></div>`;
   document.body.append(overlay);
   overlay.querySelector('.replay-skip')?.focus();
   const canvas = overlay.querySelector('#replay-canvas');
@@ -578,7 +594,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
 }
 
 function showHalftimeDialog() {
-  showDialog(`<div class="eyebrow">HALF TIME</div><h2>ハーフタイム</h2><p>後半の指示を出せます。ここでの交代は交代機会に数えません。</p><div class="btn-row"><button class="btn" data-action="substitute">選手交代</button><button class="btn" data-action="matchTactics">戦術変更</button><button class="btn primary" data-action="resumeHalf">後半開始 →</button></div>`);
+  showDialog(`<div class="eyebrow">HALF TIME</div><h2>ハーフタイム</h2><p>後半の指示を出せます。ここでの交代は交代機会に数えません。</p><div class="btn-row"><button class="btn" data-action="openHalftimeBench">監督席で交代</button><button class="btn" data-action="matchTactics">戦術変更</button><button class="btn primary" data-action="resumeHalf">後半開始 →</button></div>`);
 }
 
 function showManagerMenu() {
@@ -696,6 +712,31 @@ document.addEventListener('click', event => {
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
   if (action === 'skipReplay') { closeGoalReplay(); return; }
+  if (action === 'selectMatchSub') {
+    selectedMatchSubOutId = Number(button.dataset.id);
+    matchInfoTab = 'bench';
+    render();
+    return;
+  }
+  if (action === 'confirmMatchSub') {
+    const incoming = state.players.find(player => player.id === Number(button.dataset.id));
+    if (!incoming || selectedMatchSubOutId === null) return;
+    const error = MatchEngine.queueSub(activeMatch, selectedMatchSubOutId, incoming);
+    if (error) { showToast(error); return; }
+    const halftime = activeMatch.halftimePause;
+    if (halftime) MatchEngine.applyQueuedSubs(activeMatch, true);
+    selectedMatchSubOutId = null;
+    render();
+    showToast(halftime ? `${incoming.name}を起用しました` : `${incoming.name}の交代を予約しました`);
+    return;
+  }
+  if (action === 'openHalftimeBench') {
+    closeDialog();
+    matchInfoTab = 'bench';
+    render();
+    document.getElementById('match-tray-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   if (action === 'matchTab' && ['bench', 'stats', 'log'].includes(button.dataset.tab)) {
     matchInfoTab = button.dataset.tab;
     render();
@@ -711,7 +752,7 @@ document.addEventListener('click', event => {
   }
   if (action === 'managerMenu') showManagerMenu();
   if (action === 'substitute') showSubDialog();
-  if (action === 'matchTactics') showTacticDialog();
+  if (action === 'matchTactics') { matchWasPaused = activeMatch.paused; showTacticDialog(); }
   if (action === 'queueSub') {
     const outId = Number($('#sub-out')?.value);
     const inPlayer = state.players.find(player => player.id === Number($('#sub-in')?.value));
