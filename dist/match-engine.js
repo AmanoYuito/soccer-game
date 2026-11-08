@@ -114,7 +114,7 @@
       seconds: 0, minute: 0, tick: 0,
       hg: 0, ag: 0, shots: [0, 0], possessionSeconds: [0, 0], possession: 50,
       events: [], paused: false, speed: 1, committed: false, finished: false,
-      highlight: null,
+      highlight: null, goalFlash: null,
       actionCounts: { dribbles: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, completedPasses: 0, shots: 0 },
       visualActions: [],
       halftime: false, subsUsed: 0, windowsUsed: 0, queuedSubs: [],
@@ -457,6 +457,7 @@
     if (goalSide !== -1) {
       if (ball.kind === 'shot' && ball.y >= 34 - GOAL_HALF_WIDTH && ball.y <= 34 + GOAL_HALF_WIDTH) {
         if (goalSide === 0) match.hg++; else match.ag++;
+        match.goalFlash = { side: goalSide, start: match.seconds, until: match.seconds + 1.5 };
         const scorer = match.players.find(p => p.uid === ball.shooter);
         if (scorer?.sourceId !== null && scorer?.sourceId !== undefined) {
           match.goalScorers.push(scorer.sourceId);
