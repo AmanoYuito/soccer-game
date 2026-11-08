@@ -132,6 +132,130 @@ function updateMatchUI() {
   }
 }
 
+function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
+  const dir = side === 0 ? 1 : -1;
+  const frontX = side === 0 ? pitch.x + pitch.w - 3 : pitch.x + 3;
+  const backX = frontX + dir * (27 + Math.round(pulse * 8));
+  const top = Math.round(py(30.1));
+  const bottom = Math.round(py(37.9));
+  const backTop = top + 5 - pulse * 2;
+  const backBottom = bottom - 5 + pulse * 2;
+  ctx.save();
+  ctx.fillStyle = '#173c3080';
+  ctx.beginPath();
+  ctx.moveTo(frontX + dir * 4, top + 5);
+  ctx.lineTo(backX + dir * 5, backTop + 5);
+  ctx.lineTo(backX + dir * 5, backBottom + 6);
+  ctx.lineTo(frontX + dir * 4, bottom + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(frontX, top);
+  ctx.lineTo(backX, backTop);
+  ctx.lineTo(backX, backBottom);
+  ctx.lineTo(frontX, bottom);
+  ctx.closePath();
+  ctx.fillStyle = '#dce6c44d';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = pulse > 0 ? '#fff3c7df' : '#f7f5dcac';
+  ctx.lineWidth = 1;
+  for (let col = 1; col < 6; col++) {
+    const t = col / 6;
+    const x = frontX + (backX - frontX) * t;
+    ctx.beginPath();
+    ctx.moveTo(x, top + (backTop - top) * t);
+    ctx.lineTo(x, bottom + (backBottom - bottom) * t);
+    ctx.stroke();
+  }
+  for (let row = 1; row < 10; row++) {
+    const t = row / 10;
+    ctx.beginPath();
+    ctx.moveTo(frontX, top + (bottom - top) * t);
+    ctx.lineTo(backX, backTop + (backBottom - backTop) * t);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#284a4388';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(frontX + dir * 2, top + 3);
+  ctx.lineTo(backX + dir * 2, backTop + 3);
+  ctx.lineTo(backX + dir * 2, backBottom + 3);
+  ctx.lineTo(frontX + dir * 2, bottom + 3);
+  ctx.stroke();
+  ctx.strokeStyle = '#f9f5df';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(frontX, top);
+  ctx.lineTo(backX, backTop);
+  ctx.lineTo(backX, backBottom);
+  ctx.lineTo(frontX, bottom);
+  ctx.stroke();
+  ctx.fillStyle = '#fffdf1';
+  ctx.fillRect(frontX - 4, top - 4, 8, 8);
+  ctx.fillRect(frontX - 4, bottom - 4, 8, 8);
+  ctx.fillStyle = '#becdc2';
+  ctx.fillRect(backX - 2, backTop - 2, 4, 4);
+  ctx.fillRect(backX - 2, backBottom - 2, 4, 4);
+  ctx.restore();
+}
+
+function drawBallIllustration(ctx, x, y, groundY, spin) {
+  const lift = Math.max(0, groundY - y);
+  ctx.save();
+  ctx.fillStyle = '#15382780';
+  ctx.beginPath();
+  ctx.ellipse(x + 1, groundY + 5, Math.max(3, 8 - lift * .14), Math.max(1.5, 3 - lift * .05), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.translate(x, y);
+  ctx.rotate(spin);
+  ctx.fillStyle = '#213a34';
+  ctx.beginPath();
+  ctx.arc(0, 0, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fffdf0';
+  ctx.beginPath();
+  ctx.arc(0, -.5, 6.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#8ba59a';
+  ctx.lineWidth = .8;
+  ctx.beginPath();
+  ctx.arc(0, -.5, 6.9, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+    const innerX = Math.cos(a) * 3.3;
+    const innerY = Math.sin(a) * 3.3;
+    const outerX = Math.cos(a) * 6;
+    const outerY = Math.sin(a) * 6;
+    ctx.strokeStyle = '#748e84';
+    ctx.lineWidth = .8;
+    ctx.beginPath();
+    ctx.moveTo(innerX, innerY);
+    ctx.lineTo(outerX, outerY);
+    ctx.stroke();
+    ctx.fillStyle = '#273c38';
+    ctx.beginPath();
+    ctx.arc(outerX, outerY, 1.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#263c38';
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+    const x0 = Math.cos(a) * 3.25;
+    const y0 = Math.sin(a) * 3.25;
+    if (i === 0) ctx.moveTo(x0, y0); else ctx.lineTo(x0, y0);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-4, -5, 2, 2);
+  ctx.restore();
+}
+
 function drawMatch() {
   const canvas = $('#match-canvas');
   const match = activeMatch;
@@ -189,11 +313,12 @@ function drawMatch() {
   ctx.strokeRect(px(99.5), py(34 - 9), px(105) - px(99.5) - 4, py(18) - py(0));
   ctx.fillStyle = '#e6efc7';
   for (const x of [11, 52.5, 94]) { ctx.beginPath(); ctx.arc(px(x), py(34), 3, 0, Math.PI * 2); ctx.fill(); }
-  for (const x of [pitch.x - 9, pitch.x + pitch.w + 1]) {
-    ctx.fillStyle = '#d8e3d0';
-    ctx.fillRect(x, py(34 - 4), 9, py(8) - py(0));
-    ctx.fillStyle = '#91ad94';
-    for (let n = 1; n < 4; n++) ctx.fillRect(x + n * 2, py(34 - 4), 1, py(8) - py(0));
+  for (const side of [0, 1]) {
+    const flash = match.goalFlash;
+    const progress = flash?.side === side && flash.until > match.seconds
+      ? (match.seconds - flash.start) / (flash.until - flash.start) : -1;
+    const pulse = progress >= 0 ? Math.max(0, Math.sin(progress * Math.PI)) : 0;
+    drawGoalIllustration(ctx, pitch, py, side, pulse);
   }
 
   const carrier = match.players.find(player => player.uid === match.ball.carrier);
@@ -315,10 +440,12 @@ function drawMatch() {
     ctx.stroke();
   }
   if (match.ball.trail?.length && (dribbling || !carrier)) {
-    ctx.fillStyle = '#fff9cf88';
     for (const [i, dot] of match.ball.trail.entries()) {
-      const size = 2 + Math.round(i / 2);
-      ctx.fillRect(Math.round(px(dot.x)) - size / 2, Math.round(py(dot.y)) - size / 2, size, size);
+      const radius = 1.5 + i * .45;
+      ctx.fillStyle = `rgba(255, 250, 221, ${.12 + i * .08})`;
+      ctx.beginPath();
+      ctx.arc(Math.round(px(dot.x)), Math.round(py(dot.y)), radius, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
   const bx = Math.round(px(match.ball.x));
@@ -328,12 +455,8 @@ function drawMatch() {
   const holdAction = carrier && [...match.visualActions].reverse().find(item => item.uid === carrier.uid && item.until > match.seconds);
   const heldHeight = holdAction && ['header', 'catch'].includes(holdAction.kind) ? 17 : 0;
   const ballY = by - Math.max(0, Math.round(flight), heldHeight);
-  ctx.fillStyle = '#21432b88';
-  ctx.fillRect(bx - 4, by + 3, 9, 3);
-  ctx.fillStyle = '#fffdf1';
-  ctx.fillRect(bx - 5, ballY - 5, 10, 10);
-  ctx.fillStyle = '#243b34';
-  ctx.fillRect(bx - 1, ballY - 1, 3, 3);
+  const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
+  drawBallIllustration(ctx, bx, ballY, by, spin);
   ctx.restore();
 }
 
