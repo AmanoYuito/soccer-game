@@ -27,6 +27,16 @@ function create(seed = 42) {
   return { match, random };
 }
 
+{
+  const preview = MatchEngine.makeOpponent(62, seeded(711));
+  const match = MatchEngine.create({
+    home: 0, away: 1, ownPlayers: roster, formation: '4-3-3',
+    opponentStrength: 62, opponentPlayers: preview, random: seeded(42)
+  });
+  assert.deepEqual(match.players.filter(player => player.side === 1).map(player => player.name),
+    preview.map(player => player.name), 'scouted starting XI must match the match lineup');
+}
+
 function run(seed, batchSize) {
   const { match, random } = create(seed);
   const tactic = { style: 'balanced', press: 50, tempo: 50 };
@@ -158,6 +168,19 @@ assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes
   MatchEngine.applyQueuedSubs(match, true);
   assert.equal(match.subsUsed, 1);
   assert.equal(match.windowsUsed, 0, 'halftime substitution does not use a window');
+}
+
+{
+  const { match } = create();
+  match.minute = 62;
+  const bench = { ...roster[9], id: 103, name: 'スーパーサブ', number: 21,
+    specialAbilities: [{ id: 'superSub', level: 2 }] };
+  assert.equal(MatchEngine.queueSub(match, 9, bench), null);
+  MatchEngine.applyQueuedSubs(match, false);
+  const entered = match.players.find(player => player.sourceId === 103);
+  assert.equal(entered.superSubBoost, 6);
+  assert.equal(entered.shoot, bench.shoot + 6);
+  assert.ok(match.events.at(-1).text.includes('スーパーサブ +6'));
 }
 
 console.log('Match engine checks passed.');
