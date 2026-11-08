@@ -35,6 +35,31 @@ const skinPalette = ['#f2bf91', '#dfa77e', '#c88e68', '#aa7555', '#8e6048', '#e9
 const hairPalette = ['#282a30', '#503527', '#75503a', '#a16b36', '#413d3a', '#d1ad66', '#6b4241'];
 const portraitBacks = ['#86a99a', '#a4a083', '#8296b5', '#b29387', '#789e9f'];
 const growthTypes = ['早熟', '標準', '晩成', '波型', '大器晩成'];
+const specialAbilityCatalog = {
+  superSub: ['スーパーサブ', '後半の途中出場で技術・走力が上がる'],
+  oneTouchPass: ['ワンタッチパス', '受けてすぐのパスが速く正確になる'],
+  midRangeShot: ['ミドルシューター', 'ペナルティエリア外のシュート精度と威力が上がる'],
+  aerial: ['空中戦の達人', '浮いたボールを拾いやすく、ヘディング後に素早く動ける'],
+  dribbler: ['ドリブル突破', 'フェイントや股抜きの成功率が上がる'],
+  ironman: ['鉄人', '試合中の体力消耗を抑える'],
+  shotStopper: ['守護神', 'GKのシュートセーブ率が上がる']
+};
+
+function defaultSpecialAbilities(player) {
+  const hash = playerHash(playerIdentity(player));
+  const pool = player.pos === 'GK' ? ['shotStopper', 'ironman'] :
+    ['CB', 'LB', 'RB', 'SB'].includes(player.pos) ? ['aerial', 'ironman', 'oneTouchPass', 'superSub'] :
+    ['DMF', 'CMF', 'AMF', 'LM', 'RM'].includes(player.pos) ? ['oneTouchPass', 'midRangeShot', 'dribbler', 'ironman', 'superSub'] :
+    ['superSub', 'midRangeShot', 'aerial', 'dribbler', 'oneTouchPass', 'ironman'];
+  const first = player.id >= 11 && player.id < 1000 && player.pos !== 'GK' && player.id % 2 === 0 ? 'superSub' : pool[hash % pool.length];
+  const chosen = [first];
+  for (let shift = 5; chosen.length < Math.min(3, pool.length); shift += 5) {
+    const candidate = pool[(hash >>> shift) % pool.length];
+    if (!chosen.includes(candidate)) chosen.push(candidate);
+    if (shift > 25) for (const item of pool) if (chosen.length < 3 && !chosen.includes(item)) chosen.push(item);
+  }
+  return chosen.map((id, index) => ({ id, level: 1 + ((hash >>> (index * 6 + 2)) % 3) }));
+}
 
 function playerHash(value) {
   let hash = 2166136261;
@@ -100,6 +125,11 @@ function createAbilities(player) {
 
 function enrichPlayer(player) {
   let changed = false;
+  if (!Array.isArray(player.specialAbilities)) { player.specialAbilities = defaultSpecialAbilities(player); changed = true; }
+  else {
+    const clean = player.specialAbilities.filter(item => item && Object.hasOwn(specialAbilityCatalog, item.id) && Number.isInteger(item.level) && item.level >= 1 && item.level <= 3).slice(0, 3);
+    if (clean.length !== player.specialAbilities.length) { player.specialAbilities = clean; changed = true; }
+  }
   const appearance = appearanceFor(player);
   if (!player.appearance || Object.keys(appearance).some(key => player.appearance[key] !== appearance[key])) {
     player.appearance = appearance;
