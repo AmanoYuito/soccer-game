@@ -372,7 +372,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const pitch = { x: 44, y: 36, w: 872, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'follow' ? 1.95 : 1;
+  const zoom = camera === 'follow' ? 2.3 : 1;
   const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
   const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
