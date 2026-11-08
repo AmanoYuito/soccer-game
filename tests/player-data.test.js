@@ -11,6 +11,8 @@ const player = { id: 1, name: '検証 選手', pos: 'CF', ovr: 70, shoot: 76, pa
 context.player = player;
 assert.equal(vm.runInContext('enrichPlayer(player)', context), true);
 assert.equal(Object.keys(player.abilities).length, 35);
+assert.equal(player.specialAbilities.length, 3);
+assert.ok(player.specialAbilities.every(item => item.level >= 1 && item.level <= 3));
 assert.ok(player.heightCm >= 166 && player.heightCm <= 192);
 assert.ok(player.weightKg > 0);
 const original = JSON.stringify(player);
@@ -20,6 +22,9 @@ const originalLook = JSON.stringify(player.appearance);
 player.appearance.hair = (player.appearance.hair + 1) % 7;
 assert.notEqual(JSON.stringify(player.appearance), originalLook);
 assert.equal(vm.runInContext('enrichPlayer(player)', context), false, 'custom appearance must persist');
+const savedSpecials = JSON.stringify(player.specialAbilities);
+assert.equal(vm.runInContext('enrichPlayer(player)', context), false);
+assert.equal(JSON.stringify(player.specialAbilities), savedSpecials, 'special abilities must persist in saves');
 const before = { shoot: player.shoot, pass: player.pass, defend: player.defend, speed: player.speed };
 context.before = before;
 const oldAccuracy = player.abilities.shotAccuracy;
