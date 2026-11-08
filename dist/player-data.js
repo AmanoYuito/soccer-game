@@ -47,10 +47,7 @@ const specialAbilityCatalog = {
 
 function defaultSpecialAbilities(player) {
   const hash = playerHash(playerIdentity(player));
-  const pool = player.pos === 'GK' ? ['shotStopper', 'ironman'] :
-    ['CB', 'LB', 'RB', 'SB'].includes(player.pos) ? ['aerial', 'ironman', 'oneTouchPass', 'superSub'] :
-    ['DMF', 'CMF', 'AMF', 'LM', 'RM'].includes(player.pos) ? ['oneTouchPass', 'midRangeShot', 'dribbler', 'ironman', 'superSub'] :
-    ['superSub', 'midRangeShot', 'aerial', 'dribbler', 'oneTouchPass', 'ironman'];
+  const pool = specialAbilityPool(player);
   const first = player.id >= 11 && player.id < 1000 && player.pos !== 'GK' && player.id % 2 === 0 ? 'superSub' : pool[hash % pool.length];
   const chosen = [first];
   for (let shift = 5; chosen.length < Math.min(3, pool.length); shift += 5) {
@@ -59,6 +56,35 @@ function defaultSpecialAbilities(player) {
     if (shift > 25) for (const item of pool) if (chosen.length < 3 && !chosen.includes(item)) chosen.push(item);
   }
   return chosen.map((id, index) => ({ id, level: 1 + ((hash >>> (index * 6 + 2)) % 3) }));
+}
+
+function specialAbilityPool(player) {
+  return player.pos === 'GK' ? ['shotStopper', 'ironman'] :
+    ['CB', 'LB', 'RB', 'SB'].includes(player.pos) ? ['aerial', 'ironman', 'oneTouchPass', 'superSub'] :
+    ['DMF', 'CMF', 'AMF', 'LM', 'RM'].includes(player.pos) ? ['oneTouchPass', 'midRangeShot', 'dribbler', 'ironman', 'superSub'] :
+    ['superSub', 'midRangeShot', 'aerial', 'dribbler', 'oneTouchPass', 'ironman'];
+}
+
+const specialTrainingTheme = { superSub:'fitness', oneTouchPass:'attack', midRangeShot:'attack', aerial:'defense', dribbler:'attack', ironman:'fitness', shotStopper:'defense' };
+function specialTrainingCost(player, id) {
+  const known = player.specialAbilities?.find(item => item.id === id);
+  return known ? 100 + known.level * 25 : 100;
+}
+function advanceSpecialTraining(player, theme, appeared, facilityLevel = 1) {
+  const id = player.specialFocus;
+  if (!id || !specialAbilityPool(player).includes(id)) return null;
+  const known = player.specialAbilities.find(item => item.id === id);
+  if (known?.level >= 3 || (!known && player.specialAbilities.length >= 5)) return null;
+  const gain = (appeared ? 24 : 13) + (specialTrainingTheme[id] === theme ? 9 : 0) + Math.max(1, facilityLevel) * 2;
+  const cost = specialTrainingCost(player, id);
+  player.specialProgress[id] = Math.min(cost, (player.specialProgress[id] || 0) + gain);
+  if (player.specialProgress[id] < cost) return { id, gain, progress: player.specialProgress[id], cost };
+  player.specialProgress[id] = 0;
+  if (known) known.level++;
+  else player.specialAbilities.push({ id, level: 1 });
+  const level = known ? known.level : 1;
+  if (level >= 3 || player.specialAbilities.length >= 5 && !known) player.specialFocus = null;
+  return { id, gain, progress: 0, cost, level, learned: !known };
 }
 
 function playerHash(value) {
@@ -127,9 +153,11 @@ function enrichPlayer(player) {
   let changed = false;
   if (!Array.isArray(player.specialAbilities)) { player.specialAbilities = defaultSpecialAbilities(player); changed = true; }
   else {
-    const clean = player.specialAbilities.filter(item => item && Object.hasOwn(specialAbilityCatalog, item.id) && Number.isInteger(item.level) && item.level >= 1 && item.level <= 3).slice(0, 3);
+    const clean = player.specialAbilities.filter(item => item && Object.hasOwn(specialAbilityCatalog, item.id) && Number.isInteger(item.level) && item.level >= 1 && item.level <= 3).slice(0, 5);
     if (clean.length !== player.specialAbilities.length) { player.specialAbilities = clean; changed = true; }
   }
+  if (!player.specialProgress || typeof player.specialProgress !== 'object' || Array.isArray(player.specialProgress)) { player.specialProgress = {}; changed = true; }
+  if (player.specialFocus !== null && (typeof player.specialFocus !== 'string' || !specialAbilityPool(player).includes(player.specialFocus))) { player.specialFocus = null; changed = true; }
   const appearance = appearanceFor(player);
   if (!player.appearance || Object.keys(appearance).some(key => player.appearance[key] !== appearance[key])) {
     player.appearance = appearance;
