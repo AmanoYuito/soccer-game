@@ -4,6 +4,10 @@ let matchCamera = 'full';
 let matchWasPaused = false;
 let matchInfoTab = 'bench';
 let lastMatchBenchTick = -30;
+let replayFrames = [];
+let goalReplay = null;
+let replayTimer = null;
+let replayHoldTimer = null;
 function matchRandom() {
   let value = matchSeed | 0;
   value ^= value << 13;
@@ -27,7 +31,7 @@ function matchStaminaHTML(match) {
 }
 
 function matchTrayHTML(match) {
-  if (matchInfoTab === 'stats') return `<div class="match-tray-stats"><div><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div><span>交代</span><strong id="subs-status">${match.subsUsed}/5人 · ${match.windowsUsed}/3回</strong></div></div>`;
+  if (matchInfoTab === 'stats') return `<div class="match-tray-stats"><div><span>シュート</span><strong id="shots">${match.shots[0]} - ${match.shots[1]}</strong></div><div><span>支配率</span><strong id="possession">${match.possession}% - ${100 - match.possession}%</strong></div><div><span>突破</span><strong id="skill-moves">${match.actionCounts.feints}回 / 股抜き${match.actionCounts.nutmegs}回</strong></div><div><span>戦術</span><strong id="live-style">${styleLabel(state.style)}</strong></div><div><span>交代</span><strong id="subs-status">${match.subsUsed}/5人 · ${match.windowsUsed}/3回</strong></div></div>`;
   if (matchInfoTab === 'log') return `<div class="match-tray-log" id="events">${eventHTML(match.events.slice(-14)) || '<p>キックオフを待っています。</p>'}</div>`;
   const onField = match.players.filter(player => player.side === match.ownSide).sort((a, b) => a.slot - b.slot);
   const bench = state.players.filter(player => !match.appeared.includes(player.id));
@@ -53,6 +57,7 @@ function matchView() {
       </div>
       <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
       <div class="match-control-deck"><button class="deck-button deck-primary ${match.paused ? 'is-active' : ''}" data-action="pause" ${match.halftimePause ? 'disabled' : ''}>${match.paused ? '▶ 試合を再開' : 'Ⅱ 一時停止'}</button><button class="deck-button" data-action="cycleSpeed">速度 ${match.speed}倍 ↻</button><button class="deck-button deck-manager-button" data-action="managerMenu">⚑ 監督メニュー</button></div>
+      <p class="match-help">選手は自動でプレーします。監督は速度・戦術・交代を選べます。ゴール後はリプレイを再生します。</p>
     </div></div>
     <section class="match-tray" aria-label="試合情報"><div class="match-tray-top"><div><small>COACH'S BENCH</small><h2>監督席</h2></div><div class="match-tray-tabs">${[['bench','ベンチ'],['stats','試合情報'],['log','試合記録']].map(([id,label]) => `<button data-action="matchTab" data-tab="${id}" class="${matchInfoTab === id ? 'active' : ''}" aria-pressed="${matchInfoTab === id}">${label}</button>`).join('')}</div></div><div id="match-tray-content">${matchTrayHTML(match)}</div></section>
   </div>`;
@@ -73,6 +78,8 @@ function startMatch() {
   matchSeed = state.seed;
   matchInfoTab = 'bench';
   lastMatchBenchTick = -30;
+  replayFrames = [];
+  closeGoalReplay(false);
   matchCamera = window.matchMedia('(max-width:780px)').matches ? 'follow' : 'full';
   activeMatch = MatchEngine.create({
     home: fixture[0],
@@ -93,8 +100,23 @@ function tickMatch() {
   const match = activeMatch;
   if (!match || match.paused) return;
   const wasHalftime = match.halftime;
+  let scored = false;
   for (let i = 0; i < 3 * match.speed && !match.finished; i++) {
+    const score = match.hg + match.ag;
     MatchEngine.step(match, matchRandom, { style: state.style, press: state.press, tempo: state.tempo });
+    if (match.hg + match.ag > score) {
+      replayFrames.push(match.goalMoment);
+      scored = true;
+      break;
+    }
+    if (match.tick % 2 === 0) captureReplayFrame(match);
+  }
+  if (scored) {
+    if (!wasHalftime && match.halftime) match.halftimePause = true;
+    drawMatch();
+    updateMatchUI();
+    startGoalReplay(match);
+    return;
   }
   if (!wasHalftime && match.halftime) {
     match.paused = true;
@@ -106,6 +128,74 @@ function tickMatch() {
   drawMatch();
   updateMatchUI();
   if (match.finished) finishMatch();
+}
+
+function captureReplayFrame(match) {
+  replayFrames.push({
+    seconds: match.seconds, minute: match.minute, ownSide: match.ownSide,
+    players: match.players.map(player => ({ ...player, appearance: player.appearance ? { ...player.appearance } : null })),
+    ball: { ...match.ball, trail: match.ball.trail.map(dot => ({ ...dot })) },
+    visualActions: match.visualActions.map(action => ({ ...action })),
+    highlight: match.highlight ? { ...match.highlight } : null,
+    goalFlash: match.goalFlash ? { ...match.goalFlash } : null
+  });
+  if (replayFrames.length > 120) replayFrames.shift();
+}
+
+function startGoalReplay(match) {
+  closeGoalReplay(false);
+  const moment = match.goalMoment;
+  if (!moment) return;
+  const frames = replayFrames.filter(frame => frame && frame.seconds >= moment.seconds - 7 && frame.seconds <= moment.seconds);
+  if (!frames.length || frames[frames.length - 1] !== moment) frames.push(moment);
+  const wasPaused = match.paused;
+  match.paused = true;
+  goalReplay = { frames, index: 0, wasPaused };
+  const overlay = document.createElement('div');
+  overlay.className = 'goal-replay';
+  overlay.id = 'goal-replay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'ゴールリプレイ');
+  overlay.innerHTML = `<div class="replay-card"><div class="replay-heading"><div><small>GOAL! · REPLAY</small><h2>ゴールリプレイ</h2><p>${escapeHTML(moment.scorerName)}の得点シーン</p></div><div class="replay-score">${match.hg}<span>–</span>${match.ag}</div></div><canvas id="replay-canvas" width="960" height="540" aria-label="得点直前のリプレイ映像"></canvas><div class="replay-footer"><div class="replay-progress"><i id="replay-progress-fill"></i></div><span>自動で試合に戻ります</span><button class="replay-skip" data-action="skipReplay">▶ 試合へ戻る</button></div></div>`;
+  document.body.append(overlay);
+  overlay.querySelector('.replay-skip')?.focus();
+  const canvas = overlay.querySelector('#replay-canvas');
+  const drawFrame = () => {
+    if (!goalReplay) return;
+    const index = Math.min(goalReplay.index, goalReplay.frames.length - 1);
+    drawMatch(goalReplay.frames[index], canvas, 'follow');
+    const progress = overlay.querySelector('#replay-progress-fill');
+    if (progress) progress.style.width = `${100 * (index + 1) / goalReplay.frames.length}%`;
+    goalReplay.index++;
+    if (goalReplay.index >= goalReplay.frames.length) {
+      clearInterval(replayTimer);
+      replayTimer = null;
+      replayHoldTimer = setTimeout(() => closeGoalReplay(), 1100);
+    }
+  };
+  drawFrame();
+  if (goalReplay && goalReplay.index < frames.length) replayTimer = setInterval(drawFrame, 55);
+}
+
+function closeGoalReplay(resume = true) {
+  clearInterval(replayTimer);
+  clearTimeout(replayHoldTimer);
+  replayTimer = null;
+  replayHoldTimer = null;
+  document.getElementById('goal-replay')?.remove();
+  if (!goalReplay) return;
+  const wasPaused = goalReplay.wasPaused;
+  goalReplay = null;
+  replayFrames = [];
+  if (!resume || !activeMatch) return;
+  activeMatch.paused = wasPaused;
+  if (activeMatch.halftimePause) {
+    activeMatch.paused = true;
+    render();
+    showHalftimeDialog();
+  } else if (activeMatch.finished) finishMatch();
+  else { render(); drawMatch(); }
 }
 
 function updateMatchUI() {
@@ -121,6 +211,7 @@ function updateMatchUI() {
   if ($('#events')) $('#events').innerHTML = eventHTML(match.events.slice(-14));
   if ($('#shots')) $('#shots').textContent = `${match.shots[0]} - ${match.shots[1]}`;
   if ($('#possession')) $('#possession').textContent = `${match.possession}% - ${100 - match.possession}%`;
+  if ($('#skill-moves')) $('#skill-moves').textContent = `${match.actionCounts.feints}回 / 股抜き${match.actionCounts.nutmegs}回`;
   if ($('#live-style')) $('#live-style').textContent = styleLabel(state.style);
   if ($('#subs-status')) $('#subs-status').textContent = `${match.subsUsed}/5人 · ${match.windowsUsed}/3回${match.queuedSubs.length ? ` · 予約 ${match.queuedSubs.length}人` : ''}`;
   if ($('#match-stamina')) $('#match-stamina').innerHTML = matchStaminaHTML(match);
@@ -256,9 +347,7 @@ function drawBallIllustration(ctx, x, y, groundY, spin) {
   ctx.restore();
 }
 
-function drawMatch() {
-  const canvas = $('#match-canvas');
-  const match = activeMatch;
+function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = matchCamera) {
   if (!canvas || !match) return;
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
@@ -266,7 +355,7 @@ function drawMatch() {
   const pitch = { x: 44, y: 36, w: 872, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = matchCamera === 'follow' ? 1.72 : 1;
+  const zoom = camera === 'follow' ? 1.72 : 1;
   const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
   const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
@@ -335,6 +424,7 @@ function drawMatch() {
     const y = Math.round(py(player.y));
     const action = [...match.visualActions].reverse().find(item => item.uid === player.uid && item.until > match.seconds);
     const pose = action?.kind;
+    const actionProgress = action ? Math.min(1, Math.max(0, (match.seconds - action.start) / (action.until - action.start))) : 0;
     const jump = ['header', 'catch', 'punch'].includes(pose) ? Math.max(0, Math.round(Math.sin(Math.min(1, (match.seconds - action.start) / (action.until - action.start)) * Math.PI) * 15)) : 0;
     const dir = player.side === 0 ? 1 : -1;
     const own = player.side === match.ownSide;
@@ -358,8 +448,27 @@ function drawMatch() {
       ctx.fillStyle = '#fff49c';
       ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x - 5, y - 30); ctx.lineTo(x + 5, y - 30); ctx.fill();
     }
+    if (pose === 'feint' || pose === 'nutmeg') {
+      const lane = action.lane || 1;
+      const sweep = Math.sin(actionProgress * Math.PI);
+      ctx.strokeStyle = pose === 'nutmeg' ? '#ffe69b' : '#c9f6bc';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x - dir * 22, y + lane * 15);
+      ctx.quadraticCurveTo(x - dir * 5, y + lane * (18 + sweep * 8), x + dir * 13, y + lane * 4);
+      ctx.stroke();
+      ctx.fillStyle = '#fff1bd';
+      for (let i = 0; i < 3; i++) ctx.fillRect(x - dir * (12 + i * 8), y + 10 + lane * i * 3, 5, 2);
+    }
+    if (pose === 'stumble') {
+      ctx.strokeStyle = '#fff1c0';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 13, y - 24); ctx.lineTo(x - 19, y - 29); ctx.moveTo(x + 13, y - 23); ctx.lineTo(x + 19, y - 29); ctx.stroke();
+    }
     ctx.save();
     ctx.translate(0, -jump);
+    if (pose === 'feint') ctx.translate(0, (action.lane || 1) * Math.sin(actionProgress * Math.PI) * 5);
+    if (pose === 'stumble') { ctx.translate(x, y); ctx.rotate((action.lane || 1) * Math.sin(actionProgress * Math.PI) * .26); ctx.translate(-x, -y); }
     if (pose === 'slide') {
       ctx.fillStyle = shorts;
       ctx.fillRect(x - dir * 9 - 6, y - 1, 17, 6);
@@ -409,6 +518,14 @@ function drawMatch() {
       ctx.fillStyle = '#1d3340';
       ctx.fillRect(x + dir * 14, y + 6, dir * 5, 3);
     }
+    if (pose === 'nutmeg') {
+      ctx.fillStyle = shorts;
+      ctx.fillRect(x - 10, y + 4, 5, 8);
+      ctx.fillRect(x + 5, y + 4, 5, 8);
+      ctx.fillStyle = '#1d3340';
+      ctx.fillRect(x - 12, y + 10, 6, 3);
+      ctx.fillRect(x + 6, y + 10, 6, 3);
+    }
     if (jump) {
       ctx.fillStyle = skin;
       ctx.fillRect(x - 11, y - 21, 4, 13);
@@ -417,7 +534,7 @@ function drawMatch() {
     }
     }
     ctx.restore();
-    if (carrier === player && matchCamera === 'follow') {
+    if (carrier === player && camera === 'follow') {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       const name = player.name.split(' ')[0];
@@ -538,6 +655,7 @@ function applyTraining(match) {
 function finishMatch() {
   const match = activeMatch;
   if (!match || match.committed) return;
+  closeGoalReplay(false);
   match.committed = true;
   clearInterval(matchTimer);
   state.seed = matchSeed;
@@ -577,6 +695,7 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
+  if (action === 'skipReplay') { closeGoalReplay(); return; }
   if (action === 'matchTab' && ['bench', 'stats', 'log'].includes(button.dataset.tab)) {
     matchInfoTab = button.dataset.tab;
     render();
