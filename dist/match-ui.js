@@ -44,7 +44,7 @@ function matchTrayHTML(match) {
     const disabled = !canSub || queued || (reserve && !compatible);
     const action = reserve ? 'confirmMatchSub' : 'selectMatchSub';
     const label = queued ? '予約済' : reserve ? '入れる' : player.sourceId === selectedMatchSubOutId ? '選択中' : '交代';
-    return `<button class="match-bench-player ${player.sourceId === selectedMatchSubOutId && !reserve ? 'selected' : ''}" data-action="${action}" data-id="${reserve ? player.id : player.sourceId}" ${disabled ? 'disabled' : ''} aria-label="${escapeHTML(player.name)} ${label}">${portraitSVG(player)}<span class="match-bench-person"><strong>${escapeHTML(player.name)}</strong><small>${escapeHTML(player.pos)} · #${player.number} · 体力${Math.round(player.stamina)}%</small><span class="match-bench-stamina ${player.stamina < 45 ? 'low' : ''}"><i style="width:${Math.round(player.stamina)}%"></i></span></span><b class="match-bench-action">${label}</b></button>`;
+    return `<button class="match-bench-player ${player.sourceId === selectedMatchSubOutId && !reserve ? 'selected' : ''}" data-action="${action}" data-id="${reserve ? player.id : player.sourceId}" ${disabled ? 'disabled' : ''} aria-label="${escapeHTML(player.name)} ${label}">${portraitSVG(player)}<span class="match-bench-person"><strong>${escapeHTML(player.name)}</strong><small>${escapeHTML(player.pos)} · #${player.number} · 体力${Math.round(player.stamina)}%</small>${specialAbilityBadges(player, 1)}<span class="match-bench-stamina ${player.stamina < 45 ? 'low' : ''}"><i style="width:${Math.round(player.stamina)}%"></i></span></span><b class="match-bench-action">${label}</b></button>`;
   };
   const hint = !canSub ? '交代枠または交代機会を使い切りました。' : selected
     ? `${escapeHTML(selected.name)}に代わる控えを選んでください。${selected.pos === 'GK' ? 'GK同士で交代できます。' : ''}`
@@ -101,6 +101,7 @@ function startMatch() {
     ownPlayers: starters(),
     formation: state.formation,
     opponentStrength: state.clubs[opponentId].strength,
+    opponentPlayers: scoutingRoster(),
     random: matchRandom
   });
   view = 'match';
