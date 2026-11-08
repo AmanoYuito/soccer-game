@@ -64,6 +64,35 @@ function run(seed, batchSize) {
 
 assert.deepEqual(run(42, 3), run(42, 12), 'render speed must not alter the result');
 assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes');
+
+{
+  const { match, random } = create();
+  const carrier = match.players.find(player => player.uid === match.ball.carrier);
+  carrier.x = 62;
+  match.ball.x = 62;
+  MatchEngine.step(match, random, { style: 'balanced', press: 50, tempo: 50 });
+  const defenders = match.players.filter(player => player.side === 1);
+  const first = defenders.filter(player => player.pressRole === 'first');
+  assert.equal(first.length, 1, 'only one defender should close down the ball');
+  assert.ok(first[0].slot >= 5, 'a midfielder should press in midfield instead of pulling a centre-back out');
+  const backLine = defenders.filter(player => player.slot >= 1 && player.slot <= 4);
+  assert.ok(backLine.every(player => player.tx > carrier.x + 10), 'the back line should protect the space behind the presser');
+  const ownBackLine = match.players.filter(player => player.side === 0 && player.slot >= 1 && player.slot <= 4);
+  assert.ok(ownBackLine.every(player => player.tx < carrier.x - 9), 'attacking defenders should hold a supporting line behind the ball');
+}
+
+{
+  const { match, random } = create();
+  const carrier = match.players.find(player => player.uid === match.ball.carrier);
+  carrier.x = 62;
+  match.ball.x = 62;
+  const nearby = match.players.find(player => player.side === 1 && player.slot === 5);
+  nearby.x = 63;
+  nearby.y = 29;
+  MatchEngine.step(match, random, { style: 'balanced', press: 50, tempo: 50 });
+  assert.equal(match.players.filter(player => player.pressRole === 'first').length, 1);
+  assert.equal(match.players.filter(player => player.pressRole === 'cover').length, 1, 'a second defender should cover behind the press');
+}
 {
   const actions = run(42, 3).actions;
   for (const kind of ['dribbles', 'steals', 'tackles', 'slides', 'headers', 'catches', 'punches', 'passes', 'shots']) {
