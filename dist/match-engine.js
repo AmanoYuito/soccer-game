@@ -114,8 +114,8 @@
       seconds: 0, minute: 0, tick: 0,
       hg: 0, ag: 0, shots: [0, 0], possessionSeconds: [0, 0], possession: 50,
       events: [], paused: false, speed: 1, committed: false, finished: false,
-      highlight: null, goalFlash: null,
-      actionCounts: { dribbles: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, completedPasses: 0, shots: 0 },
+      highlight: null, goalFlash: null, goalMoment: null,
+      actionCounts: { dribbles: 0, feints: 0, nutmegs: 0, steals: 0, tackles: 0, slides: 0, headers: 0, catches: 0, punches: 0, passes: 0, completedPasses: 0, shots: 0 },
       visualActions: [],
       halftime: false, subsUsed: 0, windowsUsed: 0, queuedSubs: [],
       appeared: ownPlayers.map(p => p.id), usedBench: [], subbedOut: [], exitStamina: {}, goalScorers: [],
@@ -177,11 +177,21 @@
         continue;
       }
       if (holder && player.uid === holder.uid) {
+        if (player.skillMove?.until > match.seconds) {
+          player.tx = player.skillMove.targetX;
+          player.ty = player.skillMove.targetY;
+          continue;
+        }
         const nearest = nearestPlayers(match, 1 - player.side, player, 1)[0];
         const avoid = nearest && distance(player, nearest) < 9
           ? (player.y === nearest.y ? (player.y < 34 ? -5 : 5) : clamp((player.y - nearest.y) * 1.2, -6, 6)) : 0;
         player.tx = clamp(player.x + dir * 11, 2, 103);
         player.ty = clamp(player.y + (34 - player.y) * .05 + avoid, 3, 65);
+        continue;
+      }
+      if (player.staggerUntil > match.seconds) {
+        player.tx = clamp(player.x - dir * 2, 2, 103);
+        player.ty = clamp(player.y + player.staggerLane * 2.8, 3, 65);
         continue;
       }
       if (!holder && ball.kind === 'pass' && player.uid === ball.intendedReceiver) {
@@ -228,7 +238,7 @@
       const dy = player.ty - player.y;
       const d = Math.hypot(dx, dy);
       const chasing = holder && player.side !== holder.side && player.slot !== 0 && distance(player, holder) < 14;
-      const maxSpeed = (4.5 + 3.5 * rating(player, 'speed', player.speed) / 100) * (chasing ? 1.13 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
+      const maxSpeed = (4.5 + 3.5 * rating(player, 'speed', player.speed) / 100) * (chasing ? 1.13 : 1) * (player.staggerUntil > match.seconds ? .42 : 1) * (1 - .18 * (1 - player.stamina / 100) ** 2);
       const accel = (player.slot === 0 ? 7 : 11) * (.75 + rating(player, 'acceleration', player.speed) / 250);
       const desiredX = d > .3 ? dx / d * maxSpeed : 0;
       const desiredY = d > .3 ? dy / d * maxSpeed : 0;
@@ -242,8 +252,8 @@
     }
   }
 
-  function recordAction(match, kind, player, duration = .9) {
-    match.visualActions.push({ kind, uid: player.uid, x: player.x, y: player.y, start: match.seconds, until: match.seconds + duration });
+  function recordAction(match, kind, player, duration = .9, details = {}) {
+    match.visualActions.push({ kind, uid: player.uid, x: player.x, y: player.y, start: match.seconds, until: match.seconds + duration, ...details });
     match.visualActions = match.visualActions.filter(action => action.until > match.seconds).slice(-8);
   }
 
@@ -270,9 +280,10 @@
   }
 
   function tackle(match, holder, random, tactic) {
+    if (holder.skillMove?.until > match.seconds) return false;
     const defenders = nearestPlayers(match, 1 - holder.side, holder, 2);
     for (const defender of defenders) {
-      if (defender.slot === 0 || distance(defender, holder) > 2.6) continue;
+      if (defender.slot === 0 || defender.staggerUntil > match.seconds || distance(defender, holder) > 2.6) continue;
       const press = defender.side === match.ownSide ? tactic.press : 50;
       const tackling = rating(defender, 'tackle', defender.defend);
       const control = rating(holder, 'ballControl', holder.pass);
@@ -287,6 +298,49 @@
       }
     }
     return false;
+  }
+
+  function trySkillMove(match, holder, random) {
+    if (holder.slot === 0 || holder.skillCooldownUntil > match.seconds ||
+        match.seconds < match.ball.actionAt || holder.skillMove?.until > match.seconds) return false;
+    const dir = direction(holder.side);
+    const defender = nearestPlayers(match, 1 - holder.side, holder, 1)[0];
+    if (!defender || defender.slot === 0 || defender.staggerUntil > match.seconds) return false;
+    const gap = distance(holder, defender);
+    const ahead = (defender.x - holder.x) * dir;
+    if (gap < 1.25 || gap > 4.5 || ahead < -.6 || ahead > 4.2) return false;
+    const control = rating(holder, 'ballControl', holder.pass);
+    const agility = rating(holder, 'agility', holder.speed);
+    const dribble = rating(holder, 'dribbling', (holder.speed + holder.pass) / 2);
+    const marking = rating(defender, 'marking', defender.defend);
+    const tackling = rating(defender, 'tackle', defender.defend);
+    const success = clamp(.5 + (control + agility + dribble - marking - tackling - 65) / 420, .28, .8);
+    if (random() >= success) {
+      holder.skillCooldownUntil = match.seconds + .8;
+      return false;
+    }
+    holder.skillCooldownUntil = match.seconds + 2.7;
+    const kind = gap < 2.7 && random() < .5 ? 'nutmeg' : 'feint';
+    const lane = holder.y <= defender.y ? -1 : 1;
+    const duration = kind === 'nutmeg' ? 1.15 : 1.05;
+    holder.skillMove = {
+      kind, start: match.seconds, until: match.seconds + duration,
+      targetX: clamp(defender.x + dir * 5.5, 2, 103),
+      targetY: clamp(defender.y + lane * (kind === 'nutmeg' ? 1.2 : 3.3), 3, 65),
+      defenderUid: defender.uid, lane
+    };
+    holder.tx = holder.skillMove.targetX;
+    holder.ty = holder.skillMove.targetY;
+    defender.staggerUntil = match.seconds + .8;
+    defender.staggerLane = -lane;
+    match.ball.dribbleUntil = holder.skillMove.until;
+    match.ball.actionAt = holder.skillMove.until + .12;
+    recordAction(match, kind, holder, duration, { defenderUid: defender.uid, lane });
+    recordAction(match, 'stumble', defender, .8, { lane: -lane });
+    match.actionCounts.dribbles++;
+    match.actionCounts[kind === 'nutmeg' ? 'nutmegs' : 'feints']++;
+    event(match, `${holder.name} が${kind === 'nutmeg' ? '股抜き' : 'フェイント'}で突破！`, 'dribble');
+    return true;
   }
 
   function findPass(match, holder, tactic, random) {
@@ -442,10 +496,18 @@
     if (holder) {
       const dir = direction(holder.side);
       const touch = Math.sin(match.seconds * 15);
-      ball.x = clamp(holder.x + dir * (.7 + .32 * Math.max(0, touch)), 0, LENGTH);
-      ball.y = clamp(holder.y + .48 * touch, 0, WIDTH);
+      const skill = holder.skillMove?.until > match.seconds ? holder.skillMove : null;
+      if (skill?.kind === 'nutmeg') {
+        const phase = (match.seconds - skill.start) / (skill.until - skill.start);
+        const defender = match.players.find(player => player.uid === skill.defenderUid);
+        ball.x = clamp(phase < .58 && defender ? defender.x + dir * (phase * 3 - .7) : holder.x + dir * (1 + .3 * touch), 0, LENGTH);
+        ball.y = clamp(phase < .58 && defender ? defender.y : holder.y + .3 * touch, 0, WIDTH);
+      } else {
+        ball.x = clamp(holder.x + dir * (.7 + .32 * Math.max(0, touch)), 0, LENGTH);
+        ball.y = clamp(holder.y + (skill ? skill.lane * Math.sin((match.seconds - skill.start) / (skill.until - skill.start) * Math.PI) * 1.1 : .48 * touch), 0, WIDTH);
+      }
       match.possessionSeconds[holder.side] += DT;
-      if (match.tick % 6 === 0 && !tackle(match, holder, random, tactic)) decide(match, holder, random, tactic);
+      if (match.tick % 6 === 0 && !trySkillMove(match, holder, random) && !tackle(match, holder, random, tactic)) decide(match, holder, random, tactic);
       return;
     }
     const speed = Math.hypot(ball.vx, ball.vy);
@@ -459,6 +521,15 @@
         if (goalSide === 0) match.hg++; else match.ag++;
         match.goalFlash = { side: goalSide, start: match.seconds, until: match.seconds + 1.5 };
         const scorer = match.players.find(p => p.uid === ball.shooter);
+        match.goalMoment = {
+          seconds: match.seconds, minute: match.minute, ownSide: match.ownSide,
+          hg: match.hg, ag: match.ag, scorerName: scorer?.name || '選手',
+          players: match.players.map(player => ({ ...player, appearance: player.appearance ? { ...player.appearance } : null })),
+          ball: { ...ball, trail: ball.trail.map(dot => ({ ...dot })) },
+          visualActions: match.visualActions.map(action => ({ ...action })),
+          highlight: match.highlight ? { ...match.highlight } : null,
+          goalFlash: { ...match.goalFlash }
+        };
         if (scorer?.sourceId !== null && scorer?.sourceId !== undefined) {
           match.goalScorers.push(scorer.sourceId);
         }
