@@ -13,6 +13,7 @@ assert.equal(vm.runInContext('enrichPlayer(player)', context), true);
 assert.equal(Object.keys(player.abilities).length, 35);
 assert.equal(player.specialAbilities.length, 3);
 assert.ok(player.specialAbilities.every(item => item.level >= 1 && item.level <= 3));
+assert.equal(player.specialFocus, null);
 assert.ok(player.heightCm >= 166 && player.heightCm <= 192);
 assert.ok(player.weightKg > 0);
 const original = JSON.stringify(player);
@@ -31,4 +32,14 @@ const oldAccuracy = player.abilities.shotAccuracy;
 player.shoot += 2;
 vm.runInContext("advanceDetailedAbilities(player, before, 'attack')", context);
 assert.equal(player.abilities.shotAccuracy, Math.min(100, oldAccuracy + 2));
+const learnable = vm.runInContext('specialAbilityPool(player).find(id => !player.specialAbilities.some(item => item.id === id))', context);
+assert.ok(learnable);
+player.specialFocus = learnable;
+let milestone;
+for (let i = 0; i < 6 && !milestone?.level; i++) {
+  milestone = vm.runInContext("advanceSpecialTraining(player, 'attack', true, 1)", context);
+}
+assert.equal(milestone?.learned, true, 'focused training and match experience should teach a new skill');
+assert.ok(player.specialAbilities.some(item => item.id === learnable && item.level === 1));
+assert.ok(player.specialAbilities.length <= 5);
 console.log('Player abilities, grades and save migration checks passed.');
