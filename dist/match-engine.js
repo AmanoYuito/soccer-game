@@ -515,7 +515,7 @@
       const power = Math.min(100, rating(holder, 'shotPower', holder.shoot) + middleBonus);
       const error = (random() - .5) * (15 - accuracy / 9);
       const targetY = 34 + (random() - .5) * 5 + error;
-      kick(match, holder, holder.side === 0 ? 106 : -1, targetY, 24 + power / 11, 'shot', random);
+      kick(match, holder, holder.side === 0 ? 106 : -1, targetY, 22 + power / 12, 'shot', random);
       match.shots[holder.side]++;
       event(match, `${holder.name} がシュート！`, 'shot');
       return;
@@ -529,14 +529,14 @@
         const error = (100 - passSkill) / 35;
         const aimX = clamp(receiver.x + receiver.vx * .42 + (random() - .5) * error, 2, 103);
         const aimY = clamp(receiver.y + receiver.vy * .42 + (random() - .5) * error, 2, 66);
-        kick(match, holder, aimX, aimY, 14.5 + passSkill / 10, 'pass', random);
+        kick(match, holder, aimX, aimY, 12.5 + passSkill / 11, 'pass', random);
         match.ball.intendedReceiver = receiver.uid;
         match.ball.passTarget = { x: aimX, y: aimY };
         return;
       }
     }
     const tempo = holder.side === match.ownSide ? clamp(tactic.tempo, 0, 100) : 50;
-    match.ball.dribbleUntil = match.seconds + 1.3 - tempo * .004 + random() * .5;
+    match.ball.dribbleUntil = match.seconds + 1.5 - tempo * .003 + random() * .45;
     match.ball.actionAt = match.ball.dribbleUntil;
     holder.tx = clamp(holder.x + dir * 13, 2, 103);
     match.actionCounts.dribbles++;
@@ -602,7 +602,7 @@
     const holder = activePlayer(match);
     if (holder) {
       const dir = direction(holder.side);
-      const touch = Math.sin(match.seconds * 15);
+      const touch = Math.sin(match.seconds * 10);
       const skill = holder.skillMove?.until > match.seconds ? holder.skillMove : null;
       if (skill?.kind === 'nutmeg') {
         const phase = (match.seconds - skill.start) / (skill.until - skill.start);
@@ -610,8 +610,8 @@
         ball.x = clamp(phase < .58 && defender ? defender.x + dir * (phase * 3 - .7) : holder.x + dir * (1 + .3 * touch), 0, LENGTH);
         ball.y = clamp(phase < .58 && defender ? defender.y : holder.y + .3 * touch, 0, WIDTH);
       } else {
-        ball.x = clamp(holder.x + dir * (.7 + .32 * Math.max(0, touch)), 0, LENGTH);
-        ball.y = clamp(holder.y + (skill ? skill.lane * Math.sin((match.seconds - skill.start) / (skill.until - skill.start) * Math.PI) * 1.1 : .48 * touch), 0, WIDTH);
+        ball.x = clamp(holder.x + dir * (.65 + .14 * Math.max(0, touch)), 0, LENGTH);
+        ball.y = clamp(holder.y + (skill ? skill.lane * Math.sin((match.seconds - skill.start) / (skill.until - skill.start) * Math.PI) * 1.1 : .17 * touch), 0, WIDTH);
       }
       match.possessionSeconds[holder.side] += DT;
       if (match.tick % 6 === 0 && !trySkillMove(match, holder, random) && !tackle(match, holder, random, tactic)) decide(match, holder, random, tactic);
