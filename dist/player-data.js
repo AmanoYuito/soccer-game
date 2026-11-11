@@ -171,6 +171,8 @@ function enrichPlayer(player) {
       changed = true;
     }
   }
+  if (!player.abilityGrowthXP || typeof player.abilityGrowthXP !== 'object' || Array.isArray(player.abilityGrowthXP)) { player.abilityGrowthXP = {}; changed = true; }
+  if (!player.coreGrowthXP || typeof player.coreGrowthXP !== 'object' || Array.isArray(player.coreGrowthXP)) { player.coreGrowthXP = {}; changed = true; }
   const hash = playerHash(playerIdentity(player));
   if (!Number.isFinite(player.heightCm)) { player.heightCm = 166 + hash % 27; changed = true; }
   if (!Number.isFinite(player.weightKg)) { player.weightKg = Math.round(player.heightCm * .45 - 5 + (hash >>> 7) % 8); changed = true; }
@@ -185,30 +187,53 @@ function enrichRoster(saveData) {
   return changed;
 }
 
-function advanceDetailedAbilities(player, before, theme) {
-  if (!player.abilities) enrichPlayer(player);
-  const changes = {
-    shoot: player.shoot - before.shoot,
-    pass: player.pass - before.pass,
-    defend: player.defend - before.defend,
-    speed: player.speed - before.speed
+function advanceDetailedAbilities(player, theme, appeared, facilityLevel, randomInt) {
+  if (!player.abilities || !player.abilityGrowthXP || !player.coreGrowthXP) enrichPlayer(player);
+  const pools = player.pos === 'GK' ? {
+    balanced: ['saving','reflexes','catching','gkPositioning','gkKicking','rushing'],
+    attack: ['gkKicking','rushing','shortPass'],
+    defense: ['saving','reflexes','catching','gkPositioning','highBall'],
+    fitness: ['endurance','jumping','rushing','agility']
+  } : {
+    balanced: ['shotAccuracy','shortPass','dribbling','ballControl','tackle','marking','speed','offBall','heading'],
+    attack: ['shotAccuracy','shotPower','shortPass','dribbling','ballControl','heading','attackingAwareness','vision'],
+    defense: ['tackle','marking','interception','defensivePositioning','blocking','heading'],
+    fitness: ['speed','acceleration','endurance','strength','jumping','agility']
   };
-  const sets = {
-    shoot: ['shotAccuracy', 'shotPower', 'heading', 'attackingAwareness'],
-    pass: ['shortPass', 'longPass', 'ballControl', 'crossing', 'setPiece', 'vision', 'teamwork'],
-    defend: ['tackle', 'marking', 'interception', 'defensivePositioning', 'blocking'],
-    speed: ['speed', 'acceleration', 'agility', 'offBall']
+  const pool = pools[theme];
+  if (!pool) return { detailed: {}, core: {}, progress: {} };
+  const buckets = {
+    shoot: ['shotAccuracy','shotPower','heading','attackingAwareness'],
+    pass: ['shortPass','longPass','ballControl','crossing','vision','gkKicking'],
+    defend: ['tackle','marking','interception','defensivePositioning','blocking','saving','reflexes','catching','gkPositioning','highBall'],
+    speed: ['speed','acceleration','agility','offBall','rushing']
   };
-  for (const [source, keys] of Object.entries(sets)) {
-    for (const key of keys) player.abilities[key] = Math.min(100, player.abilities[key] + Math.max(0, changes[source]));
-  }
-  if (theme === 'fitness') {
-    player.abilities.endurance = Math.min(100, player.abilities.endurance + 1);
-    player.abilities.strength = Math.min(100, player.abilities.strength + 1);
-  }
-  if (player.pos === 'GK' && changes.defend > 0) {
-    for (const key of ['saving', 'reflexes', 'catching', 'gkPositioning', 'highBall']) {
-      player.abilities[key] = Math.min(100, player.abilities[key] + changes.defend);
+  const detailed = {}, core = {}, progress = {}, picked = new Set();
+  const ageFactor = player.age < 23 ? 1.12 : player.age < 29 ? 1 : .76;
+  const potentialFactor = player.ovr >= player.potential ? .45 : 1;
+  for (let i = 0; i < (appeared ? 2 : 1); i++) {
+    const choices = pool.filter(key => !picked.has(key) && player.abilities[key] < 100);
+    if (!choices.length) break;
+    const key = choices[randomInt(0, choices.length - 1)];
+    picked.add(key);
+    const points = Math.max(5, Math.round(randomInt(28, 39) * ageFactor * potentialFactor * (appeared ? 1.12 : .78) * (1 + Math.max(0, facilityLevel - 1) * .1)));
+    player.abilityGrowthXP[key] = (player.abilityGrowthXP[key] || 0) + points;
+    if (player.abilityGrowthXP[key] < 100) {
+      progress[key] = player.abilityGrowthXP[key];
+      continue;
+    }
+    player.abilityGrowthXP[key] -= 100;
+    player.abilities[key]++;
+    detailed[key] = 1;
+    progress[key] = player.abilityGrowthXP[key];
+    const source = Object.keys(buckets).find(group => buckets[group].includes(key));
+    if (!source) continue;
+    player.coreGrowthXP[source] = (player.coreGrowthXP[source] || 0) + 1;
+    if (player.coreGrowthXP[source] >= 3 && player[source] < 100) {
+      player.coreGrowthXP[source] -= 3;
+      player[source]++;
+      core[source] = 1;
     }
   }
+  return { detailed, core, progress };
 }
