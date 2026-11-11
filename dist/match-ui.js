@@ -247,12 +247,12 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   const project = (x, y) => ({ x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f });
   const center = project(frontX, py(34));
   const scale = Math.max(1, matrix.a);
-  const halfWidth = 31 * scale;
-  const depth = 23 * scale + pulse * 9;
+  const halfWidth = 33 * scale;
+  const depth = 42 * scale + pulse * 9;
   const near = { x: center.x - halfWidth, y: center.y - 13 * scale };
   const far = { x: center.x + halfWidth, y: center.y + 13 * scale };
-  const rearNear = { x: near.x + dir * depth, y: near.y - 9 * scale };
-  const rearFar = { x: far.x + dir * depth, y: far.y - 9 * scale };
+  const rearNear = { x: near.x + dir * depth, y: near.y - 35 * scale };
+  const rearFar = { x: far.x + dir * depth, y: far.y - 35 * scale };
   const height = 39 * scale;
   const postTop = point => ({ x: point.x, y: point.y - height - pulse * 5 });
   const nTop = postTop(near);
@@ -262,31 +262,36 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   const line = (a, b) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
   const quad = (a, b, c, d) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill(); };
   const mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const netFace = (a, b, c, d, fill, stroke, columns, rows) => {
+    ctx.fillStyle = fill;
+    quad(a, b, c, d);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = .85;
+    for (let i = 1; i < columns; i++) {
+      const t = i / columns;
+      line(mix(a, b, t), mix(d, c, t));
+    }
+    for (let i = 1; i < rows; i++) {
+      const t = i / rows;
+      line(mix(a, d, t), mix(b, c, t));
+    }
+  };
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   // The net follows the ground projection, while the posts rise vertically.
-  ctx.fillStyle = '#15352670';
+  ctx.fillStyle = '#15352630';
   quad(near, far, rearFar, rearNear);
-  ctx.fillStyle = pulse ? '#f7e9ad88' : '#f4f5dc5c';
-  quad(nTop, fTop, rfTop, rnTop);
-  ctx.fillStyle = '#f0f5e438';
-  quad(rnTop, rfTop, rearFar, rearNear);
-  ctx.strokeStyle = '#f9fff4a8';
-  ctx.lineWidth = 1.2;
-  for (let i = 1; i < 9; i++) {
-    const t = i / 9;
-    line(mix(nTop, fTop, t), mix(rnTop, rfTop, t));
-    line(mix(rnTop, rfTop, t), mix(rearNear, rearFar, t));
-  }
-  for (let i = 1; i < 6; i++) {
-    const t = i / 6;
-    line(mix(nTop, rnTop, t), mix(fTop, rfTop, t));
-    line(mix(rnTop, rearNear, t), mix(rfTop, rearFar, t));
-  }
-  ctx.strokeStyle = '#d8e6db';
-  ctx.lineWidth = 3;
+  netFace(rnTop, rfTop, rearFar, rearNear, '#e4f4de18', '#f7fff068', 10, 5);
+  netFace(nTop, fTop, rfTop, rnTop, pulse ? '#fff1c468' : '#f4f5dd48', '#ffffff88', 10, 6);
+  netFace(fTop, rfTop, rearFar, far, '#d3e7da30', '#ffffff8a', 6, 5);
+  netFace(nTop, rnTop, rearNear, near, '#d3e7da38', '#ffffff8a', 6, 5);
+  ctx.strokeStyle = '#d9e8de';
+  ctx.lineWidth = 2.6;
   line(nTop, rnTop); line(fTop, rfTop); line(rnTop, rfTop);
   line(rnTop, rearNear); line(rfTop, rearFar);
+  ctx.strokeStyle = '#eaf3e39c';
+  ctx.lineWidth = 1.8;
+  line(near, rearNear); line(far, rearFar); line(rearNear, rearFar);
   ctx.strokeStyle = '#244d4188';
   ctx.lineWidth = 10;
   for (const [a, b] of [[nTop, near], [fTop, far], [nTop, fTop]]) {
@@ -360,43 +365,45 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
   const height = canvas.height;
-  const pitch = { x: 60, y: 36, w: 840, h: 468 };
+  const pitch = { x: 60, y: 36, w: 1100, h: 620 };
+  const sceneWidth = pitch.x * 2 + pitch.w;
+  const sceneHeight = pitch.y * 2 + pitch.h;
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'diagonal' ? 2.45 : camera === 'follow' ? 2.5 : 1;
-  const goalLead = camera === 'diagonal' ? 180 : camera === 'follow' ? 120 : 0;
   const leftGoalLead = clamp((50 - match.ball.x) / 15, 0, 1);
   const rightGoalLead = clamp((match.ball.x - 55) / 15, 0, 1);
-  const horizontalEdge = width / (2 * zoom) - (camera === 'diagonal' ? 45 : 0);
-  const focusX = clamp(px(match.ball.x) + (rightGoalLead - leftGoalLead) * goalLead, horizontalEdge, width - horizontalEdge);
   const goalProximity = Math.max(leftGoalLead, rightGoalLead);
+  const zoom = camera === 'diagonal' ? 1.65 + goalProximity * .45 : camera === 'follow' ? 2.2 : Math.min(width / sceneWidth, height / sceneHeight);
+  const goalLead = camera === 'diagonal' ? 180 : camera === 'follow' ? 205 : 0;
+  const horizontalEdge = width / (2 * zoom) - (camera === 'diagonal' ? 90 : 70);
+  const focusX = camera === 'full' ? sceneWidth / 2 : clamp(px(match.ball.x) + (rightGoalLead - leftGoalLead) * goalLead, horizontalEdge, sceneWidth - horizontalEdge);
   const verticalGoalLead = camera === 'diagonal' ? (py(34) - py(match.ball.y)) * .75 * goalProximity + (leftGoalLead - rightGoalLead) * 20 : 0;
-  const focusY = clamp(py(match.ball.y) + verticalGoalLead, height / (2 * zoom), height - height / (2 * zoom));
+  const focusY = camera === 'full' ? sceneHeight / 2 : clamp(py(match.ball.y) + verticalGoalLead, height / (2 * zoom), sceneHeight - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#1b392d';
   ctx.fillRect(0, 0, width, height);
   ctx.save();
   ctx.translate(width / 2, height / 2);
   ctx.scale(zoom, zoom);
-  if (camera === 'diagonal') ctx.transform(1, -.055, -.14, .9, 0, 0);
+  if (camera === 'diagonal') ctx.transform(1, -.07, -.25, .84, 0, 0);
   ctx.translate(-focusX, -focusY);
 
   // An original pixel stadium and pitch; no external game art is used.
   ctx.fillStyle = '#654538';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, sceneWidth, sceneHeight);
   ctx.fillStyle = '#2b3c34';
-  ctx.fillRect(0, 0, width, 30);
-  ctx.fillRect(0, height - 30, width, 30);
+  ctx.fillRect(0, 0, sceneWidth, 30);
+  ctx.fillRect(0, sceneHeight - 30, sceneWidth, 30);
   const crowd = ['#d5c078', '#d85b48', '#6d9f93', '#e4d8aa', '#49615b'];
   for (let i = 0; i < 240; i++) {
-    const x = (i * 83) % width;
-    const y = i % 2 ? 5 + (i * 17) % 20 : height - 27 + (i * 13) % 20;
+    const x = (i * 83) % sceneWidth;
+    const y = i % 2 ? 5 + (i * 17) % 20 : sceneHeight - 27 + (i * 13) % 20;
     ctx.fillStyle = crowd[i % crowd.length];
     ctx.fillRect(x, y, 4, 3);
   }
   ctx.fillStyle = '#b88455';
-  ctx.fillRect(0, 28, width, 8);
-  ctx.fillRect(0, height - 36, width, 8);
+  ctx.fillRect(0, 28, sceneWidth, 8);
+  ctx.fillRect(0, sceneHeight - 36, sceneWidth, 8);
   ctx.fillStyle = '#244e35';
   ctx.fillRect(pitch.x - 5, pitch.y - 5, pitch.w + 10, pitch.h + 10);
   ctx.fillStyle = '#52923c';
@@ -405,6 +412,13 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ctx.fillStyle = i % 2 ? '#65a449' : '#5d9c43';
     ctx.fillRect(pitch.x + i * pitch.w / 12, pitch.y, pitch.w / 12 + 1, pitch.h);
   }
+  for (let i = 0; i < 600; i++) {
+    const x = pitch.x + (i * 139 + i * i * 17) % pitch.w;
+    const y = pitch.y + (i * 83 + i * i * 13) % pitch.h;
+    const worn = (x < pitch.x + pitch.w * .22 || x > pitch.x + pitch.w * .78) && Math.abs(y - py(34)) < pitch.h * .27;
+    ctx.fillStyle = worn && i % 5 === 0 ? '#9c9c5970' : i % 3 === 0 ? '#85b96245' : '#386f3250';
+    ctx.fillRect(x, y, 3 + i % 5, 2 + i % 3);
+  }
   ctx.fillStyle = '#d8c65f';
   ctx.fillRect(pitch.x, pitch.y - 5, pitch.w, 5);
   ctx.fillRect(pitch.x, pitch.y + pitch.h, pitch.w, 5);
@@ -412,7 +426,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.lineWidth = 2.5;
   ctx.strokeRect(pitch.x + 4, pitch.y + 4, pitch.w - 8, pitch.h - 8);
   ctx.beginPath(); ctx.moveTo(px(52.5), pitch.y + 4); ctx.lineTo(px(52.5), pitch.y + pitch.h - 4); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(px(52.5), py(34), 54, 54, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(px(52.5), py(34), pitch.w * 9.15 / 105, pitch.h * 9.15 / 68, 0, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeRect(px(0) + 4, py(34 - 20), px(16.5) - px(0), py(40) - py(0));
   ctx.strokeRect(px(88.5), py(34 - 20), px(105) - px(88.5) - 4, py(40) - py(0));
   ctx.strokeRect(px(0) + 4, py(34 - 9), px(5.5) - px(0), py(18) - py(0));
@@ -452,7 +466,11 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     const bodyWidth = [14, 16, 19][look.build];
     const bodyHalf = Math.floor(bodyWidth / 2);
     const heightOffset = Math.max(-1, Math.min(2, Math.round((player.heightCm - 175) / 10)));
-    const stride = Math.abs(player.vx) + Math.abs(player.vy) > 1 ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 2) : 0;
+    const moving = Math.hypot(player.vx, player.vy) > 1.4;
+    const stride = moving ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 3) : 0;
+    const lean = moving ? Math.round(clamp(player.vx * .35, -2, 2)) : 0;
+    const bob = moving ? Math.round(Math.abs(Math.sin(match.seconds * 15 + player.slot)) * 2) : 0;
+    const facing = Math.abs(player.vx) > Math.abs(player.vy) * .7 ? Math.sign(player.vx) : 0;
     const shirt = keeper ? '#e7ad46' : own ? '#f8f3dc' : '#cf5650';
     const trim = keeper ? '#65452a' : own ? '#275c8d' : '#f4d7aa';
     const shorts = own ? '#275c8d' : '#f0e4cf';
@@ -467,9 +485,9 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     }
     ctx.save();
     if (camera === 'diagonal') {
-      const determinant = .9 - .055 * .14;
+      const determinant = .84 - .07 * .25;
       ctx.translate(x, y);
-      ctx.transform(.9 / determinant, .055 / determinant, .14 / determinant, 1 / determinant, 0, 0);
+      ctx.transform(.84 / determinant, .07 / determinant, .25 / determinant, 1 / determinant, 0, 0);
       ctx.translate(-x, -y);
     }
     if (pose === 'feint' || pose === 'nutmeg') {
@@ -490,6 +508,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.beginPath(); ctx.moveTo(x - 13, y - 24); ctx.lineTo(x - 19, y - 29); ctx.moveTo(x + 13, y - 23); ctx.lineTo(x + 19, y - 29); ctx.stroke();
     }
     ctx.save();
+    if (pose !== 'slide') ctx.translate(lean, -bob);
     ctx.translate(0, -jump);
     if (pose === 'feint') ctx.translate(0, (action.lane || 1) * Math.sin(actionProgress * Math.PI) * 5);
     if (pose === 'stumble') { ctx.translate(x, y); ctx.rotate((action.lane || 1) * Math.sin(actionProgress * Math.PI) * .26); ctx.translate(-x, -y); }
@@ -514,8 +533,8 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ctx.fillRect(x - 6, y + 3, 5, 7 + stride);
     ctx.fillRect(x + 1, y + 3, 5, 7 - stride);
     ctx.fillStyle = skin;
-    ctx.fillRect(x - bodyHalf - 2, y - 7, 4, 9);
-    ctx.fillRect(x + bodyHalf - 2, y - 7, 4, 9);
+    ctx.fillRect(x - bodyHalf - 2, y - 7 - stride, 4, 9);
+    ctx.fillRect(x + bodyHalf - 2, y - 7 + stride, 4, 9);
     ctx.fillStyle = shirt;
     ctx.fillRect(x - bodyHalf, y - 10 - heightOffset, bodyWidth, 14 + heightOffset);
     ctx.fillStyle = trim;
@@ -528,6 +547,10 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ctx.fillRect(x - 6, y - 17 - heightOffset, 2, look.hairStyle === 1 ? 6 : 4);
     if (look.hairStyle === 3 || look.hairStyle === 4) ctx.fillRect(x + 4, y - 18 - heightOffset, 2, 5);
     if (look.hairStyle === 4) ctx.fillRect(x - 2, y - 22 - heightOffset, 6, 3);
+    ctx.fillStyle = '#3c3934';
+    if (facing > 0) ctx.fillRect(x + 2, y - 15 - heightOffset, 2, 2);
+    else if (facing < 0) ctx.fillRect(x - 4, y - 15 - heightOffset, 2, 2);
+    else { ctx.fillRect(x - 3, y - 15 - heightOffset, 1, 2); ctx.fillRect(x + 2, y - 15 - heightOffset, 1, 2); }
     if (look.accessory === 1) {
       ctx.fillStyle = '#283638';
       ctx.fillRect(x - 5, y - 14 - heightOffset, 4, 2);
@@ -600,9 +623,9 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
   ctx.save();
   if (camera === 'diagonal') {
-    const determinant = .9 - .055 * .14;
+      const determinant = .84 - .07 * .25;
     ctx.translate(bx, ballY);
-    ctx.transform(.9 / determinant, .055 / determinant, .14 / determinant, 1 / determinant, 0, 0);
+      ctx.transform(.84 / determinant, .07 / determinant, .25 / determinant, 1 / determinant, 0, 0);
     ctx.translate(-bx, -ballY);
   }
   drawBallIllustration(ctx, bx, ballY, by, spin);
