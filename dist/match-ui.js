@@ -378,7 +378,9 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const rightGoalLead = clamp((match.ball.x - 55) / 15, 0, 1);
   const horizontalEdge = width / (2 * zoom) - (camera === 'diagonal' ? 45 : 0);
   const focusX = clamp(px(match.ball.x) + (rightGoalLead - leftGoalLead) * goalLead, horizontalEdge, width - horizontalEdge);
-  const focusY = clamp(py(match.ball.y) + (leftGoalLead - rightGoalLead) * (camera === 'diagonal' ? 45 : 0), height / (2 * zoom), height - height / (2 * zoom));
+  const goalProximity = Math.max(leftGoalLead, rightGoalLead);
+  const verticalGoalLead = camera === 'diagonal' ? (py(34) - py(match.ball.y)) * .75 * goalProximity + (leftGoalLead - rightGoalLead) * 20 : 0;
+  const focusY = clamp(py(match.ball.y) + verticalGoalLead, height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#1b392d';
   ctx.fillRect(0, 0, width, height);
