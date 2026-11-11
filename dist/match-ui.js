@@ -243,11 +243,11 @@ function updateMatchUI() {
 function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   const dir = side === 0 ? 1 : -1;
   const frontX = side === 0 ? pitch.x + pitch.w - 3 : pitch.x + 3;
-  const backX = frontX + dir * (27 + Math.round(pulse * 8));
-  const top = Math.round(py(30.1));
-  const bottom = Math.round(py(37.9));
-  const backTop = top + 5 - pulse * 2;
-  const backBottom = bottom - 5 + pulse * 2;
+  const backX = frontX + dir * (42 + Math.round(pulse * 10));
+  const top = Math.round(py(29.1));
+  const bottom = Math.round(py(38.9));
+  const backTop = top - 7 - pulse * 2;
+  const backBottom = bottom - 7 + pulse * 2;
   ctx.save();
   ctx.fillStyle = '#173c3080';
   ctx.beginPath();
@@ -263,22 +263,22 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   ctx.lineTo(backX, backBottom);
   ctx.lineTo(frontX, bottom);
   ctx.closePath();
-  ctx.fillStyle = '#dce6c44d';
+  ctx.fillStyle = '#dce6c478';
   ctx.fill();
   ctx.save();
   ctx.clip();
-  ctx.strokeStyle = pulse > 0 ? '#fff3c7df' : '#f7f5dcac';
-  ctx.lineWidth = 1;
-  for (let col = 1; col < 6; col++) {
-    const t = col / 6;
+  ctx.strokeStyle = pulse > 0 ? '#fff3c7ef' : '#f7f5dccc';
+  ctx.lineWidth = 1.2;
+  for (let col = 1; col < 9; col++) {
+    const t = col / 9;
     const x = frontX + (backX - frontX) * t;
     ctx.beginPath();
     ctx.moveTo(x, top + (backTop - top) * t);
     ctx.lineTo(x, bottom + (backBottom - bottom) * t);
     ctx.stroke();
   }
-  for (let row = 1; row < 10; row++) {
-    const t = row / 10;
+  for (let row = 1; row < 12; row++) {
+    const t = row / 12;
     ctx.beginPath();
     ctx.moveTo(frontX, top + (bottom - top) * t);
     ctx.lineTo(backX, backTop + (backBottom - backTop) * t);
@@ -286,7 +286,7 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   }
   ctx.restore();
   ctx.strokeStyle = '#284a4388';
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 8;
   ctx.beginPath();
   ctx.moveTo(frontX + dir * 2, top + 3);
   ctx.lineTo(backX + dir * 2, backTop + 3);
@@ -294,7 +294,7 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   ctx.lineTo(frontX + dir * 2, bottom + 3);
   ctx.stroke();
   ctx.strokeStyle = '#f9f5df';
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5;
   ctx.beginPath();
   ctx.moveTo(frontX, top);
   ctx.lineTo(backX, backTop);
@@ -302,8 +302,8 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   ctx.lineTo(frontX, bottom);
   ctx.stroke();
   ctx.fillStyle = '#fffdf1';
-  ctx.fillRect(frontX - 4, top - 4, 8, 8);
-  ctx.fillRect(frontX - 4, bottom - 4, 8, 8);
+  ctx.fillRect(frontX - 5, top - 5, 10, 10);
+  ctx.fillRect(frontX - 5, bottom - 5, 10, 10);
   ctx.fillStyle = '#becdc2';
   ctx.fillRect(backX - 2, backTop - 2, 4, 4);
   ctx.fillRect(backX - 2, backBottom - 2, 4, 4);
@@ -369,12 +369,16 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
   const height = canvas.height;
-  const pitch = { x: 44, y: 36, w: 872, h: 468 };
+  const pitch = { x: 60, y: 36, w: 840, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'diagonal' ? 2.15 : camera === 'follow' ? 2.3 : 1;
-  const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
-  const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
+  const zoom = camera === 'diagonal' ? 2.6 : camera === 'follow' ? 2.5 : 1;
+  const goalLead = camera === 'diagonal' ? 180 : camera === 'follow' ? 120 : 0;
+  const leftGoalLead = clamp((50 - match.ball.x) / 15, 0, 1);
+  const rightGoalLead = clamp((match.ball.x - 55) / 15, 0, 1);
+  const horizontalEdge = width / (2 * zoom) - (camera === 'diagonal' ? 45 : 0);
+  const focusX = clamp(px(match.ball.x) + (rightGoalLead - leftGoalLead) * goalLead, horizontalEdge, width - horizontalEdge);
+  const focusY = clamp(py(match.ball.y) + (leftGoalLead - rightGoalLead) * (camera === 'diagonal' ? 45 : 0), height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#1b392d';
   ctx.fillRect(0, 0, width, height);
