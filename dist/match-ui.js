@@ -1,6 +1,6 @@
 /* Match presentation and manager controls. The engine owns all positions and outcomes. */
 let matchSeed = 0;
-let matchCamera = 'follow';
+let matchCamera = 'diagonal';
 let matchWasPaused = false;
 let matchInfoTab = 'bench';
 let selectedMatchSubOutId = null;
@@ -65,7 +65,7 @@ function matchView() {
     </div>
     <div class="match-columns"><div class="match-primary">
       <div class="stadium-frame"><canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
-        <button class="stadium-corner-label" data-action="camera">${matchCamera === 'full' ? 'ボールを追う' : '全体を見る'} <span>↻</span></button>
+        <div class="stadium-camera" role="group" aria-label="カメラ視点">${[['diagonal','斜め'],['follow','追従'],['full','全体']].map(([mode,label]) => `<button data-action="camera" data-mode="${mode}" class="${matchCamera === mode ? 'active' : ''}" aria-pressed="${matchCamera === mode}">${label}</button>`).join('')}</div>
         <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
       </div>
       <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
@@ -94,7 +94,7 @@ function startMatch() {
   lastMatchBenchTick = -30;
   replayFrames = [];
   closeGoalReplay(false);
-  matchCamera = 'follow';
+  matchCamera = 'diagonal';
   activeMatch = MatchEngine.create({
     home: fixture[0],
     away: fixture[1],
@@ -372,13 +372,16 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const pitch = { x: 44, y: 36, w: 872, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'follow' ? 2.3 : 1;
+  const zoom = camera === 'diagonal' ? 2.15 : camera === 'follow' ? 2.3 : 1;
   const focusX = clamp(px(match.ball.x), width / (2 * zoom), width - width / (2 * zoom));
   const focusY = clamp(py(match.ball.y), height / (2 * zoom), height - height / (2 * zoom));
   ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#1b392d';
+  ctx.fillRect(0, 0, width, height);
   ctx.save();
   ctx.translate(width / 2, height / 2);
   ctx.scale(zoom, zoom);
+  if (camera === 'diagonal') ctx.transform(1, -.13, -.23, .82, 0, 0);
   ctx.translate(-focusX, -focusY);
 
   // An original pixel stadium and pitch; no external game art is used.
@@ -551,7 +554,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     }
     }
     ctx.restore();
-    if (carrier === player && camera === 'follow') {
+    if (carrier === player && camera !== 'full') {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       const name = player.name.split(' ')[0];
@@ -592,7 +595,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
   drawBallIllustration(ctx, bx, ballY, by, spin);
   ctx.restore();
-  if (camera === 'follow' && canvas.id === 'match-canvas') {
+  if (camera !== 'full' && canvas.id === 'match-canvas') {
     const mini = { x: width - 195, y: 16, w: 175, h: 112 };
     ctx.fillStyle = '#143a2ee9';
     ctx.fillRect(mini.x - 5, mini.y - 5, mini.w + 10, mini.h + 10);
@@ -666,26 +669,17 @@ function applyTraining(match) {
       player.growthType === '晩成' ? (player.age >= 25 ? 1.2 : .8) :
       player.growthType === '大器晩成' ? (player.age >= 27 ? 1.35 : .7) :
       player.growthType === '波型' ? (state.round % 3 === 0 ? 1.25 : .9) : 1;
-    const growth = (player.age < 23 ? 12 : player.age < 28 ? 8 : 4) * (1 + state.facilities.training * .16) * (theme === 'recovery' ? .4 : 1) * growthFactor;
+    const growth = (player.age < 23 ? 10 : player.age < 28 ? 7 : 4) * (1 + state.facilities.training * .12) * (theme === 'recovery' ? .5 : 1) * growthFactor;
     player.xp += growth * (appeared.has(player.id) ? 1.2 : .8);
     if (player.xp >= 100 && player.ovr < player.potential) { player.xp -= 100; player.ovr++; gained++; }
-    if (theme === 'attack') {
-      player.shoot = clamp(player.shoot + rand(1, 2), 1, 100);
-      player.pass = clamp(player.pass + rand(0, 1), 1, 100);
-    } else if (theme === 'defense') {
-      player.defend = clamp(player.defend + rand(1, 2), 1, 100);
-    } else if (theme === 'fitness') {
-      player.speed = clamp(player.speed + rand(1, 2), 1, 100);
-    } else if (theme === 'balanced') {
-      const focus = ['shoot', 'pass', 'defend', 'speed'][rand(0, 3)];
-      player[focus] = clamp(player[focus] + 1, 1, 100);
-    }
-    advanceDetailedAbilities(player, before, theme);
+    const development = advanceDetailedAbilities(player, theme, appeared.has(player.id), state.facilities.training, rand);
     const special = advanceSpecialTraining(player, theme, appeared.has(player.id), state.facilities.training);
     if (special?.level) addNews(`${player.name}が「${specialAbilityCatalog[special.id][0]}」を${special.learned ? '習得' : `Lv.${special.level}に強化`}しました。`);
     report.push({
       id: player.id, name: player.name, pos: player.pos, training: theme,
-      changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]])), special
+      changes: Object.fromEntries(Object.keys(before).map(key => [key, player[key] - before[key]])),
+      detailedChanges: development.detailed, detailedProgress: development.progress,
+      staminaBefore: before.stamina, staminaAfter: player.stamina, special
     });
   }
   if (gained) addNews(`${gained}人の選手の総合能力が上昇しました。`);
@@ -728,7 +722,7 @@ function finishMatch() {
   view = 'home';
   persist();
   render();
-  showDialog(`<div class="eyebrow">FULL TIME</div><h2>試合終了</h2><div class="summary-score">${escapeHTML(result.home)} ${match.hg} - ${match.ag} ${escapeHTML(result.away)}</div><p>シュート ${match.shots[0]} - ${match.shots[1]} · 支配率 ${match.possession}% - ${100 - match.possession}%<br>交代 ${match.subsUsed}人 · 現在の順位 ${sortedTable().findIndex(team => team.id === 0) + 1}位 / 12クラブ</p><h3 class="growth-title">選手ごとの能力上昇と体力の変化</h3><p class="growth-hint">全${state.lastGrowth.players.length}人。枠内をスクロールして確認できます。</p>${growthReportHTML(state.lastGrowth)}<div class="btn-row" style="margin-top:18px"><button class="btn primary" data-action="closeDialog">ホームへ戻る →</button><button class="btn" data-action="openTrainingReport">育成画面で見る</button></div>`);
+  showDialog(`<div class="eyebrow">FULL TIME</div><h2>試合終了</h2><div class="summary-score">${escapeHTML(result.home)} ${match.hg} - ${match.ag} ${escapeHTML(result.away)}</div><p>シュート ${match.shots[0]} - ${match.shots[1]} · 支配率 ${match.possession}% - ${100 - match.possession}%<br>交代 ${match.subsUsed}人 · 現在の順位 ${sortedTable().findIndex(team => team.id === 0) + 1}位 / 12クラブ</p><h3 class="growth-title">選手ごとの細かい能力の成長</h3><p class="growth-hint">上がった能力を明るい表示で、次の上昇までの成長ポイントを％で表示します。体力は名前の下です。</p>${growthReportHTML(state.lastGrowth)}<div class="btn-row" style="margin-top:18px"><button class="btn primary" data-action="closeDialog">ホームへ戻る →</button><button class="btn" data-action="openTrainingReport">育成画面で見る</button></div>`);
 }
 
 document.addEventListener('click', event => {
@@ -767,7 +761,8 @@ document.addEventListener('click', event => {
     return;
   }
   if (action === 'camera') {
-    matchCamera = matchCamera === 'full' ? 'follow' : 'full';
+    if (!['diagonal', 'follow', 'full'].includes(button.dataset.mode)) return;
+    matchCamera = button.dataset.mode;
     render();
   }
   if (action === 'cycleSpeed') {
