@@ -7,12 +7,13 @@ const growthLabels = {
   ovr: '総合', shoot: 'シュート', pass: 'パス',
   defend: '守備', speed: 'スピード', stamina: '体力'
 };
+const detailedGrowthLabels = Object.fromEntries(abilityGroups.flatMap(group => group.abilities.map(([key,label]) => [key,label])));
 let selectedTrainingPlayerId = null;
 const trainingMenuDetails = {
-  balanced: ['◎', '基礎練習', '能力をまんべんなく鍛える', '毎節、能力を1つ伸ばす'],
-  attack: ['⚽', 'シュート練習', 'ゴール前の決定力を磨く', 'シュート +1〜2・パス +0〜1'],
-  defense: ['◆', '守備練習', '奪う・寄せる・守る', '守備 +1〜2'],
-  fitness: ['↗', '走り込み', '走力と持久力を高める', 'スピード +1〜2・体力回復'],
+  balanced: ['◎', '基礎練習', '能力をまんべんなく鍛える', '複数の能力に成長ポイント'],
+  attack: ['⚽', '攻撃練習', 'シュートやパスの技術を磨く', 'シュート精度・ドリブルなどが成長'],
+  defense: ['◆', '守備練習', '奪う・寄せる・守る', 'タックル・マークなどが成長'],
+  fitness: ['↗', '走り込み', '走力と持久力を高める', '加速・持久力などが成長'],
   recovery: ['✚', '休養', '次の試合に備えて整える', '体力回復を優先']
 };
 
@@ -23,15 +24,18 @@ function playerTrainingTheme(player) {
 
 function growthReportHTML(report) {
   if (!Array.isArray(report?.players) || !report.players.length) return '<p class="subtle">試合を終えると、選手ごとの成長がここに残ります。</p>';
-  return `<div class="growth-report" aria-label="第${escapeHTML(report.round)}節の選手別成長">${report.players.map(row => {
+  const rows = [...report.players].sort((a, b) => Object.keys(b.detailedChanges || {}).length - Object.keys(a.detailedChanges || {}).length);
+  return `<div class="growth-report" aria-label="第${escapeHTML(report.round)}節の選手別成長">${rows.map(row => {
     const player = state.players.find(item => item.id === row.id) || row;
     const deltas = row.changes && typeof row.changes === 'object' ? row.changes : {};
-    const changes = Object.entries(growthLabels).filter(([key]) => Number.isFinite(deltas[key]) && deltas[key] !== 0).map(([key, label]) => {
-      const delta = deltas[key];
-      return `<span class="growth-chip ${delta < 0 ? 'growth-down' : ''}">${label} ${delta > 0 ? '+' : ''}${delta}</span>`;
-    }).join('');
+    const details = Object.entries(row.detailedChanges || {}).filter(([,delta]) => delta > 0).map(([key,delta]) => `<span class="growth-chip">${escapeHTML(detailedGrowthLabels[key] || key)} +${delta}</span>`).join('');
+    const overall = deltas.ovr > 0 ? `<span class="growth-chip growth-overall">総合 +${deltas.ovr}</span>` : '';
+    const legacy = row.detailedChanges ? '' : Object.entries(growthLabels).filter(([key]) => key !== 'stamina' && Number.isFinite(deltas[key]) && deltas[key] !== 0).map(([key,label]) => `<span class="growth-chip">${label} +${deltas[key]}</span>`).join('');
     const special = row.special?.level ? `<span class="growth-chip growth-special">${escapeHTML(specialAbilityCatalog[row.special.id]?.[0] || row.special.id)} ${row.special.learned ? '習得' : `Lv.${row.special.level}へ`}</span>` : '';
-    return `<div class="growth-row">${portraitSVG(player)}<div class="growth-person"><strong>${escapeHTML(row.name)}</strong><small>${escapeHTML(row.pos)} · ${trainingThemes[row.training] || 'バランス'}</small></div><div class="growth-changes">${changes || (special ? '' : '<span class="growth-none">今回は変化なし</span>')}${special}</div></div>`;
+    const progress = Object.entries(row.detailedProgress || {}).map(([key,value]) => `<span class="growth-progress">${escapeHTML(detailedGrowthLabels[key] || key)} ${Math.round(value)}%</span>`).join('');
+    const stamina = Number.isFinite(row.staminaBefore) && Number.isFinite(row.staminaAfter) ? ` · 体力 ${Math.round(row.staminaBefore)}→${Math.round(row.staminaAfter)}%` : '';
+    const badges = details + overall + legacy + special;
+    return `<div class="growth-row">${portraitSVG(player)}<div class="growth-person"><strong>${escapeHTML(row.name)}</strong><small>${escapeHTML(row.pos)} · ${trainingThemes[row.training] || 'バランス'}${stamina}</small></div><div class="growth-changes">${badges || progress || `<span class="growth-none">${row.progressed ? '成長ポイント蓄積中' : '能力変化なし'}</span>`}</div></div>`;
   }).join('')}</div>`;
 }
 
@@ -57,7 +61,7 @@ function training() {
     <section class="console-panel training-workbench"><div class="console-panel-heading"><div><small>PLAYER TRAINING</small><h2>練習メニュー</h2></div><button class="btn sm" data-action="selectPlayer" data-id="${selected.id}">能力詳細</button></div>
       <div class="training-focus">${portraitSVG(selected, true)}<div class="training-focus-name"><strong>${escapeHTML(selected.name)}</strong><small>#${selected.number} · ${escapeHTML(selected.pos)} · ${selected.growthType} · 体力 ${Math.round(selected.stamina)}%</small></div></div>
       <div class="training-core-stats" aria-label="主要能力">${statCards}</div><p class="training-grade-guide">ランクの目安：S 90〜 · A 80〜 · B 70〜 · C 60〜 · D 50〜 · E 40〜 · F 30〜 · G 29以下</p>
-      <div class="training-menu-grid">${menu}</div><p class="training-explainer">メニューは選ぶと自動保存され、次の試合終了時に成長へ反映されます。</p>
+      <div class="training-menu-grid">${menu}</div><p class="training-explainer">メニューは自動保存されます。試合後に成長ポイントがたまり、細かい能力が少しずつ上がります。出場選手は成長が速くなります。</p>
       <div class="special-training"><div class="console-panel-heading"><div><small>SPECIAL SKILL</small><h2>特殊能力の習得</h2></div><span class="console-count">${selected.specialAbilities.length}/5</span></div><p>伸ばしたい能力を1つ選ぼう。練習と試合出場で進捗がたまり、必要値に達すると習得またはLvアップします。</p><div class="special-owned">習得済み ${specialAbilityBadges(selected,5)}</div><div class="special-training-grid">${specialCards || '<span class="special-training-done">習得できる能力はすべて最高レベルです。</span>'}</div></div></section></div>
     <section class="console-panel training-results"><div class="console-panel-heading"><div><small>LAST MATCH</small><h2>前節の成長</h2></div><span class="console-count">${state.lastGrowth ? `第${escapeHTML(state.lastGrowth.round)}節` : '試合後に表示'}</span></div>${growthReportHTML(state.lastGrowth)}</section></div>`;
 }
