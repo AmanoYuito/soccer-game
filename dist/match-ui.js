@@ -242,71 +242,62 @@ function updateMatchUI() {
 
 function drawGoalIllustration(ctx, pitch, py, side, pulse = 0) {
   const dir = side === 0 ? 1 : -1;
-  const frontX = side === 0 ? pitch.x + pitch.w - 3 : pitch.x + 3;
-  const backX = frontX + dir * (42 + Math.round(pulse * 10));
-  const top = Math.round(py(29.1));
-  const bottom = Math.round(py(38.9));
-  const backTop = top - 7 - pulse * 2;
-  const backBottom = bottom - 7 + pulse * 2;
+  const frontX = side === 0 ? pitch.x + pitch.w - 4 : pitch.x + 4;
+  const matrix = ctx.getTransform();
+  const project = (x, y) => ({ x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f });
+  const center = project(frontX, py(34));
+  const scale = Math.max(1, matrix.a);
+  const halfWidth = 31 * scale;
+  const depth = 23 * scale + pulse * 9;
+  const near = { x: center.x - halfWidth, y: center.y - 13 * scale };
+  const far = { x: center.x + halfWidth, y: center.y + 13 * scale };
+  const rearNear = { x: near.x + dir * depth, y: near.y - 9 * scale };
+  const rearFar = { x: far.x + dir * depth, y: far.y - 9 * scale };
+  const height = 39 * scale;
+  const postTop = point => ({ x: point.x, y: point.y - height - pulse * 5 });
+  const nTop = postTop(near);
+  const fTop = postTop(far);
+  const rnTop = postTop(rearNear);
+  const rfTop = postTop(rearFar);
+  const line = (a, b) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+  const quad = (a, b, c, d) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill(); };
+  const mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
   ctx.save();
-  ctx.fillStyle = '#173c3080';
-  ctx.beginPath();
-  ctx.moveTo(frontX + dir * 4, top + 5);
-  ctx.lineTo(backX + dir * 5, backTop + 5);
-  ctx.lineTo(backX + dir * 5, backBottom + 6);
-  ctx.lineTo(frontX + dir * 4, bottom + 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(frontX, top);
-  ctx.lineTo(backX, backTop);
-  ctx.lineTo(backX, backBottom);
-  ctx.lineTo(frontX, bottom);
-  ctx.closePath();
-  ctx.fillStyle = '#dce6c478';
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  ctx.strokeStyle = pulse > 0 ? '#fff3c7ef' : '#f7f5dccc';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // The net follows the ground projection, while the posts rise vertically.
+  ctx.fillStyle = '#15352670';
+  quad(near, far, rearFar, rearNear);
+  ctx.fillStyle = pulse ? '#f7e9ad88' : '#f4f5dc5c';
+  quad(nTop, fTop, rfTop, rnTop);
+  ctx.fillStyle = '#f0f5e438';
+  quad(rnTop, rfTop, rearFar, rearNear);
+  ctx.strokeStyle = '#f9fff4a8';
   ctx.lineWidth = 1.2;
-  for (let col = 1; col < 9; col++) {
-    const t = col / 9;
-    const x = frontX + (backX - frontX) * t;
-    ctx.beginPath();
-    ctx.moveTo(x, top + (backTop - top) * t);
-    ctx.lineTo(x, bottom + (backBottom - bottom) * t);
-    ctx.stroke();
+  for (let i = 1; i < 9; i++) {
+    const t = i / 9;
+    line(mix(nTop, fTop, t), mix(rnTop, rfTop, t));
+    line(mix(rnTop, rfTop, t), mix(rearNear, rearFar, t));
   }
-  for (let row = 1; row < 12; row++) {
-    const t = row / 12;
-    ctx.beginPath();
-    ctx.moveTo(frontX, top + (bottom - top) * t);
-    ctx.lineTo(backX, backTop + (backBottom - backTop) * t);
-    ctx.stroke();
+  for (let i = 1; i < 6; i++) {
+    const t = i / 6;
+    line(mix(nTop, rnTop, t), mix(fTop, rfTop, t));
+    line(mix(rnTop, rearNear, t), mix(rfTop, rearFar, t));
   }
-  ctx.restore();
-  ctx.strokeStyle = '#284a4388';
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.moveTo(frontX + dir * 2, top + 3);
-  ctx.lineTo(backX + dir * 2, backTop + 3);
-  ctx.lineTo(backX + dir * 2, backBottom + 3);
-  ctx.lineTo(frontX + dir * 2, bottom + 3);
-  ctx.stroke();
-  ctx.strokeStyle = '#f9f5df';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(frontX, top);
-  ctx.lineTo(backX, backTop);
-  ctx.lineTo(backX, backBottom);
-  ctx.lineTo(frontX, bottom);
-  ctx.stroke();
-  ctx.fillStyle = '#fffdf1';
-  ctx.fillRect(frontX - 5, top - 5, 10, 10);
-  ctx.fillRect(frontX - 5, bottom - 5, 10, 10);
-  ctx.fillStyle = '#becdc2';
-  ctx.fillRect(backX - 2, backTop - 2, 4, 4);
-  ctx.fillRect(backX - 2, backBottom - 2, 4, 4);
+  ctx.strokeStyle = '#d8e6db';
+  ctx.lineWidth = 3;
+  line(nTop, rnTop); line(fTop, rfTop); line(rnTop, rfTop);
+  line(rnTop, rearNear); line(rfTop, rearFar);
+  ctx.strokeStyle = '#244d4188';
+  ctx.lineWidth = 10;
+  for (const [a, b] of [[nTop, near], [fTop, far], [nTop, fTop]]) {
+    line({ x: a.x + 2, y: a.y + 3 }, { x: b.x + 2, y: b.y + 3 });
+  }
+  ctx.strokeStyle = pulse ? '#fff5bb' : '#fffef2';
+  ctx.lineWidth = 7;
+  ctx.lineCap = 'square';
+  line(nTop, near); line(fTop, far); line(nTop, fTop);
+  ctx.fillStyle = '#fffefa';
+  for (const post of [nTop, fTop]) ctx.fillRect(post.x - 4, post.y - 4, 8, 8);
   ctx.restore();
 }
 
@@ -372,7 +363,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const pitch = { x: 60, y: 36, w: 840, h: 468 };
   const px = x => pitch.x + x / 105 * pitch.w;
   const py = y => pitch.y + y / 68 * pitch.h;
-  const zoom = camera === 'diagonal' ? 2.6 : camera === 'follow' ? 2.5 : 1;
+  const zoom = camera === 'diagonal' ? 2.45 : camera === 'follow' ? 2.5 : 1;
   const goalLead = camera === 'diagonal' ? 180 : camera === 'follow' ? 120 : 0;
   const leftGoalLead = clamp((50 - match.ball.x) / 15, 0, 1);
   const rightGoalLead = clamp((match.ball.x - 55) / 15, 0, 1);
@@ -387,7 +378,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.save();
   ctx.translate(width / 2, height / 2);
   ctx.scale(zoom, zoom);
-  if (camera === 'diagonal') ctx.transform(1, -.13, -.23, .82, 0, 0);
+  if (camera === 'diagonal') ctx.transform(1, -.055, -.14, .9, 0, 0);
   ctx.translate(-focusX, -focusY);
 
   // An original pixel stadium and pitch; no external game art is used.
@@ -473,6 +464,13 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.beginPath(); ctx.ellipse(x, y + 7, 15, 7, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = '#fff49c';
       ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x - 5, y - 30); ctx.lineTo(x + 5, y - 30); ctx.fill();
+    }
+    ctx.save();
+    if (camera === 'diagonal') {
+      const determinant = .9 - .055 * .14;
+      ctx.translate(x, y);
+      ctx.transform(.9 / determinant, .055 / determinant, .14 / determinant, 1 / determinant, 0, 0);
+      ctx.translate(-x, -y);
     }
     if (pose === 'feint' || pose === 'nutmeg') {
       const lane = action.lane || 1;
@@ -570,6 +568,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fillStyle = '#fff8dd';
       ctx.fillText(name, x, y - 36);
     }
+    ctx.restore();
   }
   if (match.highlight && match.seconds < match.highlight.until) {
     const flash = match.highlight;
@@ -599,7 +598,15 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const heldHeight = holdAction && ['header', 'catch'].includes(holdAction.kind) ? 17 : 0;
   const ballY = by - Math.max(0, Math.round(flight), heldHeight);
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
+  ctx.save();
+  if (camera === 'diagonal') {
+    const determinant = .9 - .055 * .14;
+    ctx.translate(bx, ballY);
+    ctx.transform(.9 / determinant, .055 / determinant, .14 / determinant, 1 / determinant, 0, 0);
+    ctx.translate(-bx, -ballY);
+  }
   drawBallIllustration(ctx, bx, ballY, by, spin);
+  ctx.restore();
   ctx.restore();
   if (camera !== 'full' && canvas.id === 'match-canvas') {
     const mini = { x: width - 195, y: 16, w: 175, h: 112 };
