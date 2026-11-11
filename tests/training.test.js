@@ -35,6 +35,7 @@ assert.equal(report[3].changes.defend, 0);
 assert.equal(report[3].changes.speed, 0);
 assert.equal(report[3].changes.stamina, 30);
 assert.ok(state.players[0].abilityGrowthXP.vision > 0, 'partial growth should persist');
+assert.ok(report[0].detailedProgress.vision > 0, 'the report should name the skill collecting progress');
 assert.equal(Object.keys(report[3].detailedChanges).length, 0, 'recovery should prioritize rest');
 context.applyTraining({ ownSide: 0, appeared: [], players: [], exitStamina: {} });
 const thirdReport = context.applyTraining({ ownSide: 0, appeared: [], players: [], exitStamina: {} });
