@@ -26,12 +26,13 @@ assert.equal(vm.runInContext('enrichPlayer(player)', context), false, 'custom ap
 const savedSpecials = JSON.stringify(player.specialAbilities);
 assert.equal(vm.runInContext('enrichPlayer(player)', context), false);
 assert.equal(JSON.stringify(player.specialAbilities), savedSpecials, 'special abilities must persist in saves');
-const before = { shoot: player.shoot, pass: player.pass, defend: player.defend, speed: player.speed };
-context.before = before;
 const oldAccuracy = player.abilities.shotAccuracy;
-player.shoot += 2;
-vm.runInContext("advanceDetailedAbilities(player, before, 'attack')", context);
-assert.equal(player.abilities.shotAccuracy, Math.min(100, oldAccuracy + 2));
+const oldTackle = player.abilities.tackle;
+context.pickFirst = (min) => min;
+for (let i = 0; i < 5; i++) vm.runInContext("advanceDetailedAbilities(player, 'attack', true, 1, pickFirst)", context);
+assert.ok(player.abilities.shotAccuracy > oldAccuracy, 'focused training eventually improves shot accuracy');
+assert.equal(player.abilities.tackle, oldTackle, 'attack training must not raise every unrelated ability');
+assert.ok(player.abilityGrowthXP.shotAccuracy >= 0, 'partial progress persists between matches');
 const learnable = vm.runInContext('specialAbilityPool(player).find(id => !player.specialAbilities.some(item => item.id === id))', context);
 assert.ok(learnable);
 player.specialFocus = learnable;
