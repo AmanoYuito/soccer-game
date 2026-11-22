@@ -88,6 +88,7 @@
   }
 
   function kickoff(match, side) {
+    match.restart = null;
     match.assistCandidate = null;
     match.players.forEach(player => {
       const base = match.baseSlots[player.side][player.slot];
@@ -481,6 +482,7 @@
     match.ball.passBy = kind === 'pass' ? holder.uid : null;
     match.ball.kicker = holder.uid;
     match.ball.intendedReceiver = null;
+    match.ball.fromThrow = false;
     match.ball.passTarget = null;
     match.ball.ignoreUntil = match.seconds + .4;
     match.ball.x = holder.x + dx / d * 1.05;
@@ -588,13 +590,40 @@
     return null;
   }
 
-  function restart(match, side, x, y, isHalftime = false) {
-    applyQueuedSubs(match, isHalftime);
-    const players = nearestPlayers(match, side, { x, y }, 1);
-    const taker = players[0] || match.players.find(p => p.side === side);
-    taker.x = clamp(x, 2, 103);
-    taker.y = clamp(y, 2, 66);
-    takePossession(match, taker);
+  function prepareRestart(match, kind, side, x, y) {
+    applyQueuedSubs(match, false);
+    const spot = { x, y };
+    const teammates = match.players.filter(player => player.side === side);
+    const taker = kind === 'goalKick' ? teammates.find(player => player.slot === 0)
+      : teammates.filter(player => player.slot !== 0).sort((a, b) => distance(a, spot) - distance(b, spot))[0];
+    taker.x = x;
+    taker.y = y;
+    taker.vx = taker.vy = 0;
+    match.assistCandidate = null;
+    match.highlight = null;
+    match.visualActions = [];
+    Object.assign(match.ball, { x, y, vx: 0, vy: 0, kind: 'dead', carrier: null,
+      lastTouch: side, dribbleUntil: 0, airborneUntil: 0, intendedReceiver: null, trail: [] });
+    match.restart = { kind, side, taker: taker.uid, start: match.seconds, until: match.seconds + 1.6 };
+    const label = { goalKick: 'ゴールキック', throwIn: 'スローイン', corner: 'コーナーキック' }[kind];
+    event(match, label + '。' + taker.name + 'が再開します。');
+  }
+
+  function releaseRestart(match, random) {
+    const restart = match.restart;
+    const taker = match.players.find(player => player.uid === restart.taker);
+    const options = match.players.filter(player => player.side === taker.side && player !== taker && player.slot !== 0);
+    const target = options.sort((a, b) => distance(a, taker) - distance(b, taker))[0];
+    const speed = restart.kind === 'throwIn' ? 14 : 24;
+    kick(match, taker, target.x, target.y, speed, 'pass', random);
+    match.ball.intendedReceiver = target.uid;
+    match.ball.passTarget = { x: target.x, y: target.y };
+    match.ball.flightDuration = Math.min(1.4, distance(target, taker) / speed);
+    match.ball.flightStart = match.seconds;
+    match.ball.airborneUntil = match.seconds + match.ball.flightDuration;
+    match.ball.fromThrow = restart.kind === 'throwIn';
+    if (match.ball.fromThrow) recordAction(match, 'throw', taker, .5);
+    match.restart = null;
   }
 
   function processBall(match, random, tactic) {
@@ -609,6 +638,14 @@
         const defender = match.players.find(player => player.uid === skill.defenderUid);
         ball.x = clamp(phase < .58 && defender ? defender.x + dir * (phase * 3 - .7) : holder.x + dir * (1 + .3 * touch), 0, LENGTH);
         ball.y = clamp(phase < .58 && defender ? defender.y : holder.y + .3 * touch, 0, WIDTH);
+      } else if (!skill && Math.hypot(holder.vx, holder.vy) > 1.2) {
+        const pace = Math.hypot(holder.vx, holder.vy);
+        const ux = holder.vx / pace, uy = holder.vy / pace;
+        holder.touchPhase = ((holder.touchPhase || 0) + DT * (1.3 + pace * .12)) % 1;
+        const phase = holder.touchPhase;
+        const reach = .48 + Math.min(1.2, pace * .19) * Math.sin(Math.PI * Math.sqrt(phase));
+        ball.x = clamp(holder.x + ux * reach, 0, LENGTH);
+        ball.y = clamp(holder.y + uy * reach, 0, WIDTH);
       } else {
         ball.x = clamp(holder.x + dir * (.65 + .14 * Math.max(0, touch)), 0, LENGTH);
         ball.y = clamp(holder.y + (skill ? skill.lane * Math.sin((match.seconds - skill.start) / (skill.until - skill.start) * Math.PI) * 1.1 : .17 * touch), 0, WIDTH);
@@ -647,14 +684,14 @@
         applyQueuedSubs(match, false);
         kickoff(match, 1 - goalSide);
       } else {
-        event(match, 'ゴールキック。');
-        restart(match, 1 - goalSide, goalSide === 0 ? 100 : 5, 34);
+        const right = goalSide === 0;
+        if (ball.lastTouch === goalSide) prepareRestart(match, 'goalKick', 1 - goalSide, right ? 100 : 5, ball.y < 34 ? 28 : 40);
+        else prepareRestart(match, 'corner', goalSide, right ? 104.7 : .3, ball.y < 34 ? .3 : 67.7);
       }
       return;
     }
     if (ball.y < 0 || ball.y > WIDTH) {
-      event(match, 'スローイン。');
-      restart(match, 1 - ball.lastTouch, clamp(ball.x, 5, 100), clamp(ball.y, 2, 66));
+      prepareRestart(match, 'throwIn', 1 - ball.lastTouch, clamp(ball.x, .5, 104.5), ball.y < 0 ? 0 : WIDTH);
       return;
     }
     const nearby = match.players.filter(player => {
@@ -734,9 +771,13 @@
       applyQueuedSubs(match, true);
       kickoff(match, 1);
     }
-    if (match.tick % 9 === 1) updateTargets(match, tactic);
-    movePlayers(match);
-    processBall(match, random, tactic);
+    if (match.restart) {
+      if (match.seconds >= match.restart.until) releaseRestart(match, random);
+    } else {
+      if (match.tick % 9 === 1) updateTargets(match, tactic);
+      movePlayers(match);
+      processBall(match, random, tactic);
+    }
     if (match.tick % 4 === 0) {
       match.ball.trail.push({ x: match.ball.x, y: match.ball.y });
       if (match.ball.trail.length > 6) match.ball.trail.shift();
