@@ -112,16 +112,19 @@ function startMatch() {
   render();
   window.scrollTo(0, 0);
   clearInterval(matchTimer);
-  matchTimer = setInterval(tickMatch, 100);
+  matchTimer = setInterval(tickMatch, 1000 / 30);
 }
 
 function tickMatch() {
   const match = activeMatch;
   if (!match || match.paused) return;
   const wasHalftime = match.halftime;
+  const previousRestart = match.restart;
+  const previousTick = match.tick;
   const { shots, passes } = match.actionCounts;
   let scored = false;
-  for (let i = 0; i < 3 * match.speed && !match.finished; i++) {
+  for (let i = 0; i < (match.restart ? 1 : match.speed) && !match.finished; i++) {
+    const beforeRestart = match.restart;
     const score = match.hg + match.ag;
     MatchEngine.step(match, matchRandom, { style: state.style, press: state.press, tempo: state.tempo });
     if (match.hg + match.ag > score) {
@@ -130,6 +133,7 @@ function tickMatch() {
       break;
     }
     if (match.tick % 2 === 0) captureReplayFrame(match);
+    if (beforeRestart !== match.restart) break;
   }
   if (scored) {
     MatchSound.play('goal');
@@ -150,13 +154,13 @@ function tickMatch() {
   if (!match.finished && match.actionCounts.shots > shots) MatchSound.play('shot');
   else if (!match.finished && match.actionCounts.passes > passes) MatchSound.play('pass');
   drawMatch();
-  updateMatchUI();
+  if (Math.floor(previousTick / 3) !== Math.floor(match.tick / 3) || previousRestart !== match.restart) updateMatchUI();
   if (match.finished) finishMatch();
 }
 
 function captureReplayFrame(match) {
   replayFrames.push({
-    seconds: match.seconds, minute: match.minute, ownSide: match.ownSide,
+    seconds: match.seconds, minute: match.minute, ownSide: match.ownSide, restart: match.restart && { ...match.restart },
     players: match.players.map(player => ({ ...player, appearance: player.appearance ? { ...player.appearance } : null })),
     ball: { ...match.ball, trail: match.ball.trail.map(dot => ({ ...dot })) },
     visualActions: match.visualActions.map(action => ({ ...action })),
@@ -278,16 +282,14 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0, camera = 'diagona
   const scale = Math.max(1, matrix.a);
   const near = project(frontX, py(29.1));
   const far = project(frontX, py(38.9));
-  const rearNear = project(frontX + dir * (42 + pulse * 8), py(29.1));
-  const rearFar = project(frontX + dir * (42 + pulse * 8), py(38.9));
-  rearNear.y -= 12 * scale;
-  rearFar.y -= 12 * scale;
-  const height = 39 * scale;
+  const rearNear = project(frontX + dir * (29 + pulse * 5), py(29.1));
+  const rearFar = project(frontX + dir * (29 + pulse * 5), py(38.9));
+  const height = 33 * scale;
   const postTop = point => ({ x: point.x, y: point.y - height - pulse * 5 });
   const nTop = postTop(near);
   const fTop = postTop(far);
-  const rnTop = postTop(rearNear);
-  const rfTop = postTop(rearFar);
+  const rnTop = { x: rearNear.x, y: rearNear.y - height * .73 };
+  const rfTop = { x: rearFar.x, y: rearFar.y - height * .73 };
   const line = (a, b) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
   const quad = (a, b, c, d) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill(); };
   const mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
@@ -313,7 +315,7 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0, camera = 'diagona
   netFace(rnTop, rfTop, rearFar, rearNear, '#e4f4de18', '#f7fff068', 10, 5);
   netFace(nTop, fTop, rfTop, rnTop, pulse ? '#fff1c468' : '#f4f5dd48', '#ffffff88', 10, 6);
   netFace(fTop, rfTop, rearFar, far, '#d3e7da30', '#ffffff8a', 6, 5);
-  netFace(nTop, rnTop, rearNear, near, '#d3e7da38', '#ffffff8a', 6, 5);
+
   ctx.strokeStyle = '#d9e8de';
   ctx.lineWidth = 2.6;
   line(nTop, rnTop); line(fTop, rfTop); line(rnTop, rfTop);
@@ -322,12 +324,12 @@ function drawGoalIllustration(ctx, pitch, py, side, pulse = 0, camera = 'diagona
   ctx.lineWidth = 1.8;
   line(near, rearNear); line(far, rearFar); line(rearNear, rearFar);
   ctx.strokeStyle = '#244d4188';
-  ctx.lineWidth = 10;
+  ctx.lineWidth = 5.5 * scale;
   for (const [a, b] of [[nTop, near], [fTop, far], [nTop, fTop]]) {
     line({ x: a.x + 2, y: a.y + 3 }, { x: b.x + 2, y: b.y + 3 });
   }
   ctx.strokeStyle = pulse ? '#fff5bb' : '#fffef2';
-  ctx.lineWidth = 7;
+  ctx.lineWidth = 3.5 * scale;
   ctx.lineCap = 'square';
   line(nTop, near); line(fTop, far); line(nTop, fTop);
   ctx.fillStyle = '#fffefa';
@@ -412,8 +414,10 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   const rightGoalLead = clamp((match.ball.x - 55) / 15, 0, 1);
   const goalProximity = Math.max(leftGoalLead, rightGoalLead);
   const zoom = camera === 'diagonal' ? 1.5 + goalProximity * .4 : camera === 'follow' ? 1.9 : Math.min(width / sceneWidth, height / sceneHeight);
-  const focusX = camera === 'full' ? sceneWidth / 2 : clamp(px(match.ball.x), 115, sceneWidth - 115);
-  const focusY = camera === 'full' ? sceneHeight / 2 : clamp(py(match.ball.y), 80, sceneHeight - 80);
+  const carrier = match.players.find(player => player.uid === match.ball.carrier);
+  const cameraTarget = carrier || match.ball;
+  const focusX = camera === 'full' ? sceneWidth / 2 : clamp(px(cameraTarget.x), 115, sceneWidth - 115);
+  const focusY = camera === 'full' ? sceneHeight / 2 : clamp(py(cameraTarget.y), 80, sceneHeight - 80);
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#1b392d';
   ctx.fillRect(0, 0, width, height);
@@ -427,26 +431,35 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.fillStyle = '#cf9c69';
   ctx.fillRect(-85, -96, sceneWidth + 170, sceneHeight + 192);
   const scarves = ['#e67456', '#639cba', '#f0c65e', '#e4e7c6', '#92c076'];
-  // Stepped terraces, aisles and scarves at both touchlines.
+  const ground = ctx.getTransform();
+  // Seat bases follow the touchline; each riser and spectator rises vertically.
   for (const end of [-1, 1]) {
-    const rail = end < 0 ? pitch.y - 14 : pitch.y + pitch.h + 14;
-    for (let row = 0; row < 4; row++) {
-      const y = rail + end * (row * 19 + 12);
+    const rail = end < 0 ? pitch.y - 20 : pitch.y + pitch.h + 20;
+    for (let index = 0; index < 4; index++) {
+      const row = end < 0 ? 3 - index : index;
+      const y = rail + end * (row * 22 + 14);
+      const lift = camera === 'full' ? 0 : row * 4.5 * zoom;
+      ctx.setTransform(ground.a, ground.b, ground.c, ground.d, ground.e, ground.f - lift);
       ctx.fillStyle = '#536d71';
-      ctx.fillRect(-60, y - 6, sceneWidth + 120, 17);
+      ctx.fillRect(-60, y - 10, sceneWidth + 120, 24);
       ctx.fillStyle = '#9fb3a1';
-      ctx.fillRect(-60, y + 9, sceneWidth + 120, 3);
+      ctx.fillRect(-60, y + 8, sceneWidth + 120, 3);
+      ctx.setTransform(zoom, 0, 0, zoom, 0, 0);
       for (let seat = 0; seat < 100; seat++) {
         if (seat % 16 < 2) continue;
         const x = seat * 14 - 65 + (row % 2) * 5;
+        const sx = Math.round((ground.a * x + ground.c * y + ground.e) / zoom);
+        const sy = Math.round((ground.b * x + ground.d * y + ground.f - lift) / zoom);
+        if (sx < -12 || sx > width / zoom + 12 || sy < -8 || sy > height / zoom + 15) continue;
         ctx.fillStyle = '#343f49';
-        ctx.fillRect(x, y - 6, 7, 6);
+        ctx.fillRect(sx - 3, sy - 9, 6, 4);
         ctx.fillStyle = '#ebbb8a';
-        ctx.fillRect(x + 1, y - 4, 5, 4);
+        ctx.fillRect(sx - 2, sy - 7, 5, 4);
         ctx.fillStyle = scarves[(seat * 7 + row + Math.floor(seat / 4)) % scarves.length];
-        ctx.fillRect(x - 1, y, 9, 7);
+        ctx.fillRect(sx - 4, sy - 3, 8, 5);
       }
     }
+    ctx.setTransform(ground);
     ctx.fillStyle = '#f0e3af';
     ctx.fillRect(-55, rail - 3, sceneWidth + 110, 6);
   }
@@ -487,15 +500,6 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     drawGoalIllustration(ctx, pitch, py, side, pulse, camera);
   }
 
-  const carrier = match.players.find(player => player.uid === match.ball.carrier);
-  const dribbling = carrier && match.ball.dribbleUntil > match.seconds;
-  if (dribbling) {
-    const dir = carrier.side === 0 ? 1 : -1;
-    const x = Math.round(px(carrier.x));
-    const y = Math.round(py(carrier.y));
-    ctx.fillStyle = '#f7e5a488';
-    for (let i = 1; i <= 3; i++) ctx.fillRect(x - dir * (9 + i * 9), y + 2 + (i % 2) * 3, 8 - i, 3);
-  }
   for (const player of [...match.players].sort((a, b) => a.y - b.y)) {
     const x = Math.round(px(player.x));
     const y = Math.round(py(player.y));
@@ -512,10 +516,12 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     const bodyWidth = [14, 16, 19][look.build];
     const bodyHalf = Math.floor(bodyWidth / 2);
     const heightOffset = Math.max(-1, Math.min(2, Math.round((player.heightCm - 175) / 10)));
-    const moving = Math.hypot(player.vx, player.vy) > 1.4;
-    const stride = moving ? Math.round(Math.sin(match.seconds * 15 + player.slot) * 3) : 0;
+    const moving = !match.restart && Math.hypot(player.vx, player.vy) > 1.4;
+    const runningTouch = moving && carrier === player && Number.isFinite(player.touchPhase);
+    const gait = runningTouch ? player.touchPhase * Math.PI * 2 : match.seconds * 12 + player.slot;
+    const stride = moving ? Math.round(Math.sin(gait) * (runningTouch ? 5 : 3)) : 0;
     const lean = moving ? Math.round(clamp(player.vx * .35, -2, 2)) : 0;
-    const bob = moving ? Math.round(Math.abs(Math.sin(match.seconds * 15 + player.slot)) * 2) : 0;
+    const bob = moving ? Math.round(Math.abs(Math.sin(gait)) * 2) : 0;
     const facing = Math.abs(player.vx) > Math.abs(player.vy) * .7 ? Math.sign(player.vx) : 0;
     const shirt = keeper ? '#e7ad46' : own ? '#f8f3dc' : '#cf5650';
     const trim = keeper ? '#65452a' : own ? '#275c8d' : '#f4d7aa';
@@ -554,6 +560,10 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.beginPath(); ctx.moveTo(x - 13, y - 24); ctx.lineTo(x - 19, y - 29); ctx.moveTo(x + 13, y - 23); ctx.lineTo(x + 19, y - 29); ctx.stroke();
     }
     ctx.save();
+    if (match.restart && match.restart.taker === player.uid && match.restart.kind !== 'throwIn') {
+      const remaining = Math.max(0, match.restart.until - match.seconds);
+      ctx.translate(-dir * Math.min(1, remaining / .65) * 13, 0);
+    }
     if (pose !== 'slide') ctx.translate(lean, -bob);
     ctx.translate(0, -jump);
     if (pose === 'feint') ctx.translate(0, (action.lane || 1) * Math.sin(actionProgress * Math.PI) * 5);
@@ -613,6 +623,14 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fillStyle = '#eee8cb';
       ctx.fillRect(x - 6, y - 18 - heightOffset, 12, 2);
     }
+    if (runningTouch && player.touchPhase < .3 && !pose) {
+      const push = Math.round(7 * Math.sin(player.touchPhase / .3 * Math.PI));
+      const heading = Math.sign(player.vx + player.vy * .55) || dir;
+      ctx.fillStyle = shorts;
+      ctx.fillRect(x + heading * 2, y + 4, heading * (4 + push), 4);
+      ctx.fillStyle = '#1d3340';
+      ctx.fillRect(x + heading * (4 + push), y + 7, heading * 5, 3);
+    }
     if (pose === 'pass' || pose === 'shot' || pose === 'tackle') {
       ctx.fillStyle = shorts;
       ctx.fillRect(x + dir * 5, y + 5, dir * 12, 4);
@@ -626,6 +644,11 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fillStyle = '#1d3340';
       ctx.fillRect(x - 12, y + 10, 6, 3);
       ctx.fillRect(x + 6, y + 10, 6, 3);
+    }
+    if ((match.restart?.kind === 'throwIn' && match.restart.taker === player.uid) || pose === 'throw') {
+      ctx.fillStyle = skin;
+      ctx.fillRect(x - 11, y - 22, 4, 13);
+      ctx.fillRect(x + 7, y - 22, 4, 13);
     }
     if (jump) {
       ctx.fillStyle = skin;
@@ -658,7 +681,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ctx.arc(x, y, 12 + (1 - life) * 19, 0, Math.PI * 2);
     ctx.stroke();
   }
-  if (match.ball.trail?.length && (dribbling || !carrier)) {
+  if (match.ball.trail?.length && !carrier && !match.restart) {
     for (const [i, dot] of match.ball.trail.entries()) {
       const radius = 1.5 + i * .45;
       ctx.fillStyle = `rgba(255, 250, 221, ${.12 + i * .08})`;
@@ -673,18 +696,38 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ? Math.sin(Math.PI * (match.seconds - match.ball.flightStart) / match.ball.flightDuration) * 21 : 0;
   const holdAction = carrier && [...match.visualActions].reverse().find(item => item.uid === carrier.uid && item.until > match.seconds);
   const heldHeight = holdAction && ['header', 'catch'].includes(holdAction.kind) ? 17 : 0;
-  const ballY = by - Math.max(0, Math.round(flight), heldHeight);
+  const throwing = match.restart?.kind === 'throwIn';
+  const launchHeight = match.ball.fromThrow && match.ball.airborneUntil > match.seconds
+    ? 23 * (1 - (match.seconds - match.ball.flightStart) / match.ball.flightDuration) : 0;
+  const lift = throwing ? 23 : Math.max(0, flight + launchHeight, heldHeight);
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
   ctx.save();
+  ctx.translate(bx, by);
   if (camera !== 'full') {
     const determinant = .48 + .07 * .66;
-    ctx.translate(bx, ballY);
     ctx.transform(.48 / determinant, .07 / determinant, -.66 / determinant, 1 / determinant, 0, 0);
-    ctx.translate(-bx, -ballY);
   }
-  drawBallIllustration(ctx, bx, ballY, by, spin);
+  drawBallIllustration(ctx, 0, (throwing ? 0 : 5) - lift, 5, spin);
   ctx.restore();
   ctx.restore();
+  if (match.restart) {
+    const { kind, side, taker } = match.restart;
+    const label = { goalKick: 'ゴールキック', throwIn: 'スローイン', corner: 'コーナーキック' }[kind];
+    const player = match.players.find(p => p.uid === taker);
+    const caption = (side === match.ownSide ? '自クラブ' : '相手') + '  ·  ' + (player?.name || '');
+    ctx.save();
+    ctx.font = 'bold 21px sans-serif';
+    const w = Math.max(ctx.measureText(label).width, ctx.measureText(caption).width * .72) + 30;
+    ctx.fillStyle = '#19352fed';
+    ctx.fillRect(14, 14, w, 60);
+    ctx.fillStyle = '#f4cd73';
+    ctx.fillRect(14, 14, 4, 60);
+    ctx.fillText(label, 27, 41);
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#f7f3d9';
+    ctx.fillText(caption, 27, 63);
+    ctx.restore();
+  }
   if (camera !== 'full' && canvas.id === 'match-canvas') {
     const mapWidth = Math.round(width * .14);
     const mini = { x: width - mapWidth - 12, y: 12, w: mapWidth, h: Math.round(mapWidth * 68 / 105) };
