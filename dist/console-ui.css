@@ -319,3 +319,21 @@ body.in-match .app-shell{background:linear-gradient(155deg,#162e31,#0d2025 65%)}
 .bench-caption{color:#48614e;font-size:13px;margin:4px 0 10px}
 @media(min-width:1050px){.match-app{grid-template-columns:minmax(0,1fr) clamp(270px,23vw,360px)}.match-app .match-tray{max-height:max(430px,calc(100dvh - 155px));overflow:auto;scrollbar-gutter:stable}}
 @media(max-width:600px){.match-app{gap:8px}.match-hud .hud-team strong{font-size:13px;max-height:none}.match-hud .hud-team small{font-size:10px}.match-hud .hud-clock{font-size:10px}.match-app .match-hud{grid-template-columns:minmax(0,1fr) 82px minmax(0,1fr)}.match-app .stadium-camera button{font-size:11px;min-height:30px}.prematch-actions .kickoff{min-width:0;flex-basis:100%}}
+
+/* A handheld match screen with its controls on the casing. */
+.match-app .stadium-frame{display:flex;flex-direction:column;border:4px solid #294c43;background:#263f37;box-shadow:0 4px 0 #102a27}
+.match-app .stadium-frame:after{display:none}
+.match-app .stadium-canvas{order:0}
+.match-app .stadium-commentary{order:1;position:static;transform:none;width:100%;min-height:38px;border:0;border-top:3px solid #638b65;background:#284b3c;padding:6px 12px;box-shadow:none;color:#fff6d2}
+.stadium-tools{order:2;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px;background:#ece8c7;border-top:2px solid #afbb93}
+.stadium-tools .stadium-camera{position:static;display:flex;background:transparent;border:0;box-shadow:none;padding:0}
+.stadium-tools button{cursor:pointer}
+.stadium-tools .stadium-camera button,.sound-switch{border:0;border-radius:2px;padding:5px 10px;background:transparent;color:#345540;line-height:1.2;font-family:inherit;font-weight:800;font-size:14px;min-height:38px}
+.stadium-tools .stadium-camera button.active{background:#355e47;color:#fff1bf}
+.stadium-tools .stadium-camera button:hover,.sound-switch:hover{background:#cedcb3;color:#203f31}
+.sound-switch:focus-visible{outline:3px solid #af753b}
+.match-app .match-hud{min-height:66px;background:#ece8c7;border:3px solid #355345;color:#203b32;box-shadow:0 3px 0 #102b28}
+.match-app .hud-team small{color:#526c50}
+.match-app .hud-own strong{color:#20543c}
+.match-app .hud-center{background:#263c35;box-shadow:inset 0 0 0 2px #5e765d}
+@media(max-width:600px){.match-app .stadium-canvas{aspect-ratio:16/11}.stadium-tools .stadium-camera button,.sound-switch{min-height:40px;font-size:13px}.match-app .stadium-commentary{font-size:12px}}
