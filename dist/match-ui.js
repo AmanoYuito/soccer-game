@@ -70,7 +70,7 @@ function matchView() {
     </div>
     <div class="match-columns"><div class="match-primary">
       <div class="stadium-frame"><canvas id="match-canvas" class="stadium-canvas" width="960" height="540" aria-label="サッカーの試合画面"></canvas>
-        <div class="stadium-camera" role="group" aria-label="カメラ視点">${[['diagonal','斜め'],['follow','追従'],['full','全体']].map(([mode,label]) => `<button data-action="camera" data-mode="${mode}" class="${matchCamera === mode ? 'active' : ''}" aria-pressed="${matchCamera === mode}">${label}</button>`).join('')}</div>
+        <div class="stadium-tools"><div class="stadium-camera" role="group" aria-label="カメラ視点">${[['diagonal','斜め'],['follow','追従'],['full','全体']].map(([mode,label]) => `<button data-action="camera" data-mode="${mode}" class="${matchCamera === mode ? 'active' : ''}" aria-pressed="${matchCamera === mode}">${label}</button>`).join('')}</div><button class="sound-switch" data-action="matchSound" aria-pressed="${MatchSound.enabled && MatchSound.available}" ${MatchSound.available ? '' : 'disabled'}>${MatchSound.available ? (MatchSound.enabled ? '♪ 音あり' : '♪ 消音') : '音声非対応'}</button></div>
         <div class="stadium-commentary ${latest?.goal && match.minute - latest.minute < 1 ? 'commentary-goal' : ''}" id="live-comment"><span class="commentary-minute">${latest?.minute ?? 0}′</span><span class="commentary-text">${escapeHTML(latest?.text || 'キックオフ！')}</span></div>
       </div>
       <div class="match-progress"><span>前半</span><div class="match-progress-track"><i id="match-progress-fill" style="width:${match.minute / 90 * 100}%"></i><b></b></div><span>後半</span></div>
@@ -107,6 +107,7 @@ function startMatch() {
     opponentPlayers: scoutingRoster(),
     random: matchRandom
   });
+  MatchSound.unlock('kickoff');
   view = 'match';
   render();
   window.scrollTo(0, 0);
@@ -118,6 +119,7 @@ function tickMatch() {
   const match = activeMatch;
   if (!match || match.paused) return;
   const wasHalftime = match.halftime;
+  const { shots, passes } = match.actionCounts;
   let scored = false;
   for (let i = 0; i < 3 * match.speed && !match.finished; i++) {
     const score = match.hg + match.ag;
@@ -130,6 +132,7 @@ function tickMatch() {
     if (match.tick % 2 === 0) captureReplayFrame(match);
   }
   if (scored) {
+    MatchSound.play('goal');
     if (!wasHalftime && match.halftime) match.halftimePause = true;
     drawMatch();
     updateMatchUI();
@@ -137,12 +140,15 @@ function tickMatch() {
     return;
   }
   if (!wasHalftime && match.halftime) {
+    MatchSound.play('halftime');
     match.paused = true;
     match.halftimePause = true;
     render();
     showHalftimeDialog();
     return;
   }
+  if (!match.finished && match.actionCounts.shots > shots) MatchSound.play('shot');
+  else if (!match.finished && match.actionCounts.passes > passes) MatchSound.play('pass');
   drawMatch();
   updateMatchUI();
   if (match.finished) finishMatch();
@@ -386,6 +392,15 @@ function drawBallIllustration(ctx, x, y, groundY, spin) {
 function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = matchCamera) {
   if (!canvas || !match) return;
   const ctx = canvas.getContext('2d');
+  if (canvas.id === 'match-canvas') {
+    const compact = window.matchMedia('(max-width: 600px)').matches;
+    const targetWidth = compact ? 640 : 960;
+    const targetHeight = compact ? 440 : 540;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+  }
   const width = canvas.width;
   const height = canvas.height;
   const pitch = { x: 60, y: 36, w: 1100, h: 620 };
@@ -409,27 +424,38 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.translate(-focusX, -focusY);
 
   // An original pixel stadium and pitch; no external game art is used.
-  ctx.fillStyle = '#654538';
-  ctx.fillRect(0, 0, sceneWidth, sceneHeight);
-  ctx.fillStyle = '#2b3c34';
-  ctx.fillRect(0, 0, sceneWidth, 30);
-  ctx.fillRect(0, sceneHeight - 30, sceneWidth, 30);
-  const crowd = ['#d5c078', '#d85b48', '#6d9f93', '#e4d8aa', '#49615b'];
-  for (let i = 0; i < 240; i++) {
-    const x = (i * 83) % sceneWidth;
-    const y = i % 2 ? 5 + (i * 17) % 20 : sceneHeight - 27 + (i * 13) % 20;
-    ctx.fillStyle = crowd[i % crowd.length];
-    ctx.fillRect(x, y, 4, 3);
+  ctx.fillStyle = '#cf9c69';
+  ctx.fillRect(-85, -96, sceneWidth + 170, sceneHeight + 192);
+  const scarves = ['#e67456', '#639cba', '#f0c65e', '#e4e7c6', '#92c076'];
+  // Stepped terraces, aisles and scarves at both touchlines.
+  for (const end of [-1, 1]) {
+    const rail = end < 0 ? pitch.y - 14 : pitch.y + pitch.h + 14;
+    for (let row = 0; row < 4; row++) {
+      const y = rail + end * (row * 19 + 12);
+      ctx.fillStyle = '#536d71';
+      ctx.fillRect(-60, y - 6, sceneWidth + 120, 17);
+      ctx.fillStyle = '#9fb3a1';
+      ctx.fillRect(-60, y + 9, sceneWidth + 120, 3);
+      for (let seat = 0; seat < 100; seat++) {
+        if (seat % 16 < 2) continue;
+        const x = seat * 14 - 65 + (row % 2) * 5;
+        ctx.fillStyle = '#343f49';
+        ctx.fillRect(x, y - 6, 7, 6);
+        ctx.fillStyle = '#ebbb8a';
+        ctx.fillRect(x + 1, y - 4, 5, 4);
+        ctx.fillStyle = scarves[(seat * 7 + row + Math.floor(seat / 4)) % scarves.length];
+        ctx.fillRect(x - 1, y, 9, 7);
+      }
+    }
+    ctx.fillStyle = '#f0e3af';
+    ctx.fillRect(-55, rail - 3, sceneWidth + 110, 6);
   }
-  ctx.fillStyle = '#b88455';
-  ctx.fillRect(0, 28, sceneWidth, 8);
-  ctx.fillRect(0, sceneHeight - 36, sceneWidth, 8);
   ctx.fillStyle = '#244e35';
   ctx.fillRect(pitch.x - 5, pitch.y - 5, pitch.w + 10, pitch.h + 10);
   ctx.fillStyle = '#52923c';
   ctx.fillRect(pitch.x, pitch.y, pitch.w, pitch.h);
   for (let i = 0; i < 12; i++) {
-    ctx.fillStyle = i % 2 ? '#65a449' : '#5d9c43';
+    ctx.fillStyle = i % 2 ? '#92c85b' : '#83bd54';
     ctx.fillRect(pitch.x + i * pitch.w / 12, pitch.y, pitch.w / 12 + 1, pitch.h);
   }
   for (let i = 0; i < 600; i++) {
@@ -442,8 +468,8 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.fillStyle = '#d8c65f';
   ctx.fillRect(pitch.x, pitch.y - 5, pitch.w, 5);
   ctx.fillRect(pitch.x, pitch.y + pitch.h, pitch.w, 5);
-  ctx.strokeStyle = '#e6efc7';
-  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#fff8d2';
+  ctx.lineWidth = 3.3;
   ctx.strokeRect(pitch.x + 4, pitch.y + 4, pitch.w - 8, pitch.h - 8);
   ctx.beginPath(); ctx.moveTo(px(52.5), pitch.y + 4); ctx.lineTo(px(52.5), pitch.y + pitch.h - 4); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(px(52.5), py(34), pitch.w * 9.15 / 105, pitch.h * 9.15 / 68, 0, 0, Math.PI * 2); ctx.stroke();
@@ -451,7 +477,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.strokeRect(px(88.5), py(34 - 20), px(105) - px(88.5) - 4, py(40) - py(0));
   ctx.strokeRect(px(0) + 4, py(34 - 9), px(5.5) - px(0), py(18) - py(0));
   ctx.strokeRect(px(99.5), py(34 - 9), px(105) - px(99.5) - 4, py(18) - py(0));
-  ctx.fillStyle = '#e6efc7';
+  ctx.fillStyle = '#fff8d2';
   for (const x of [11, 52.5, 94]) { ctx.beginPath(); ctx.arc(px(x), py(34), 3, 0, Math.PI * 2); ctx.fill(); }
   for (const side of [0, 1]) {
     const flash = match.goalFlash;
@@ -560,10 +586,18 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     ctx.fillStyle = trim;
     ctx.fillRect(x - bodyHalf, y - 9 - heightOffset, bodyWidth, 3);
     ctx.fillRect(x - 2, y - 6, 4, 8);
-    ctx.fillStyle = skin;
-    ctx.fillRect(x - 5, y - 18 - heightOffset, 10, 9);
+    // A stepped jaw, hair silhouette and bright sleeves read at handheld scale.
+    ctx.fillStyle = trim;
+    ctx.fillRect(x - bodyHalf - 2, y - 9 - stride, 4, 4);
+    ctx.fillRect(x + bodyHalf - 2, y - 9 + stride, 4, 4);
     ctx.fillStyle = hair;
-    ctx.fillRect(x - 6, y - 20 - heightOffset, 12, look.hairStyle === 2 ? 6 : 4);
+    ctx.fillRect(x - 7, y - 20 - heightOffset, 14, 10);
+    ctx.fillRect(x - 5, y - 11 - heightOffset, 10, 3);
+    ctx.fillStyle = skin;
+    ctx.fillRect(x - 6, y - 18 - heightOffset, 12, 8);
+    ctx.fillRect(x - 4, y - 11 - heightOffset, 8, 3);
+    ctx.fillStyle = hair;
+    ctx.fillRect(x - 6, y - 22 - heightOffset, 12, look.hairStyle === 2 ? 6 : 4);
     ctx.fillRect(x - 6, y - 17 - heightOffset, 2, look.hairStyle === 1 ? 6 : 4);
     if (look.hairStyle === 3 || look.hairStyle === 4) ctx.fillRect(x + 4, y - 18 - heightOffset, 2, 5);
     if (look.hairStyle === 4) ctx.fillRect(x - 2, y - 22 - heightOffset, 6, 3);
@@ -652,7 +686,8 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
   ctx.restore();
   ctx.restore();
   if (camera !== 'full' && canvas.id === 'match-canvas') {
-    const mini = { x: width - 195, y: 16, w: 175, h: 112 };
+    const mapWidth = Math.round(width * .14);
+    const mini = { x: width - mapWidth - 12, y: 12, w: mapWidth, h: Math.round(mapWidth * 68 / 105) };
     ctx.fillStyle = '#143a2ee9';
     ctx.fillRect(mini.x - 5, mini.y - 5, mini.w + 10, mini.h + 10);
     ctx.fillStyle = '#578f4b';
@@ -769,6 +804,7 @@ function finishMatch() {
   if (!match || match.committed) return;
   closeGoalReplay(false);
   match.committed = true;
+  MatchSound.play('fulltime');
   clearInterval(matchTimer);
   state.seed = matchSeed;
   updateTable(match.home, match.away, match.hg, match.ag);
@@ -807,6 +843,12 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button || !activeMatch) return;
   const action = button.dataset.action;
+  if (action === 'matchSound') {
+    MatchSound.toggle();
+    button.setAttribute('aria-pressed', String(MatchSound.enabled));
+    button.textContent = MatchSound.enabled ? '♪ 音あり' : '♪ 消音';
+    return;
+  }
   if (action === 'skipReplay') { closeGoalReplay(); return; }
   if (action === 'cancelSubSelection' || action === 'selectMatchSub') {
     selectedMatchSubOutId = action === 'cancelSubSelection' ? null : Number(button.dataset.id);
@@ -880,6 +922,7 @@ document.addEventListener('click', event => {
   }
   if (action === 'resumeHalf') {
     closeDialog();
+    MatchSound.unlock('kickoff');
     activeMatch.halftimePause = false;
     activeMatch.paused = false;
     render();
