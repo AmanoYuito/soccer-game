@@ -284,3 +284,38 @@ body.map-navigation .content-section .eyebrow{color:#3f8653}
 @media(max-width:1100px){.console-layout{grid-template-columns:1fr}.lineup-candidates,.training-selectors{max-height:400px}}
 @media(max-width:780px){body.console-view .content{padding:20px 12px 45px}.console-screen .page-head h1{font-size:26px}.console-panel{padding:12px}.match-app{padding:9px 9px 38px}.match-bench-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.match-tray-top{align-items:start;flex-direction:column}.match-tray-tabs{width:100%}.match-tray-tabs button{flex:1}.match-control-deck{margin-bottom:12px}}
 @media(max-width:510px){.lineup-pitch{aspect-ratio:1.12}.lineup-token{width:54px;min-height:49px;display:grid;justify-items:center;gap:0}.lineup-token .player-portrait{width:24px;height:24px}.lineup-token-text b{font-size:8px}.lineup-token-text small{font-size:7px}.lineup-selected{gap:5px}.lineup-step{display:none}.lineup-selected small{font-size:9px}.training-menu-grid{grid-template-columns:1fr}.training-menu-card{min-height:78px}.training-core-stats{gap:3px}.training-core-stats>span{font-size:9px}.match-bench-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.match-tray{padding:9px;border-width:3px}.match-tray-tabs button{padding:7px 4px;font-size:10px}.match-tray-stats{grid-template-columns:repeat(2,1fr)}.match-tray-stats strong{font-size:15px}}
+
+/* Matchday board */
+.prematch-actions{justify-content:center;align-items:stretch;margin:16px 0 22px}
+.prematch-actions .kickoff{min-width:12em;background:#ffdb75}
+body.in-match .app-shell{background:linear-gradient(155deg,#162e31,#0d2025 65%)}
+.match-app{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:16px clamp(10px,2vw,32px) 28px;align-items:start}
+.match-topline,.match-hud{grid-column:1/-1}
+.match-app .match-topline{margin:0;color:#cfdfcc;font-size:13px}
+.match-app .match-hud{border:1px solid #496760;border-bottom:3px solid #d0af5f;background:#203d40;color:#f8f4dd;box-shadow:none}
+.match-hud:before,.match-hud:after{display:none}
+.match-hud .hud-own strong{color:#fff1af}
+.match-hud .hud-team small{color:#bcd2c8;letter-spacing:.04em;font-size:12px}
+.match-hud .hud-center{background:#112d32;border:0}
+.match-hud .hud-score{color:#ffe393}
+.match-hud .hud-clock{font-size:12px}
+.match-columns{margin:0}
+.stadium-frame{border:3px solid #42625a;box-shadow:0 4px 12px #0003}
+.match-app .match-progress{color:#c9d8c6;margin:12px 2px 0}
+.match-app .match-tray{border:1px solid #b5c8ae;border-top:4px solid #d6b66d;background:#f1f1dd;border-radius:4px;box-shadow:none;padding:12px}
+.match-app .match-tray-top{display:block;border:0;padding:0;margin:0 0 10px}
+.match-app .match-control-deck{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0;margin:0 0 14px;background:none;border:0;box-shadow:none}
+.match-control-deck>.deck-button{grid-column:auto;padding:4px;min-height:44px;font-size:13px}
+.match-tray .match-tray-tabs{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #94aa91;margin-bottom:10px;gap:2px}
+.match-tray .match-tray-tabs button{min-height:44px;border:none;border-radius:0;background:transparent;font-size:14px;padding:4px;color:#49634f}
+.match-tray .match-tray-tabs button.active{box-shadow:inset 0 -3px #296147;color:#143f31;background:#dde7cc}
+.match-app .match-tray-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.match-app .match-tray-stats>div{border:1px solid #b8cbb2;background:#fbfae9;padding:12px 5px}
+.match-app .match-tray-stats>div:last-child{grid-column:1/-1}
+.match-app .match-tray-stats span,.match-app .match-tray-log .event{font-size:13px}
+.match-app .match-bench-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
+.bench-step{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:15px}
+.bench-step button{background:#fffbed;color:#284f38;border:1px solid #799579;border-radius:3px;padding:8px;cursor:pointer}
+.bench-caption{color:#48614e;font-size:13px;margin:4px 0 10px}
+@media(min-width:1050px){.match-app{grid-template-columns:minmax(0,1fr) clamp(270px,23vw,360px)}.match-app .match-tray{max-height:max(430px,calc(100dvh - 155px));overflow:auto;scrollbar-gutter:stable}}
+@media(max-width:600px){.match-app{gap:8px}.match-hud .hud-team strong{font-size:13px;max-height:none}.match-hud .hud-team small{font-size:10px}.match-hud .hud-clock{font-size:10px}.match-app .match-hud{grid-template-columns:minmax(0,1fr) 82px minmax(0,1fr)}.match-app .stadium-camera button{font-size:11px;min-height:30px}.prematch-actions .kickoff{min-width:0;flex-basis:100%}}
