@@ -37,6 +37,29 @@ function create(seed = 42) {
     preview.map(player => player.name), 'scouted starting XI must match the match lineup');
 }
 
+for (const [x, y, lastTouch, expected, side] of [
+  [64, -1, 1, 'throwIn', 0], [39, 69, 0, 'throwIn', 1],
+  [106, 20, 0, 'goalKick', 1], [-1, 48, 1, 'goalKick', 0],
+  [106, 20, 1, 'corner', 0]
+]) {
+  const { match, random } = create();
+  const tactic = { style: 'balanced', press: 50, tempo: 50 };
+  Object.assign(match.ball, { carrier: null, kind: 'loose', x, y, vx: 0, vy: 0, lastTouch });
+  MatchEngine.step(match, random, tactic);
+  assert.equal(match.restart.kind, expected);
+  assert.equal(match.restart.side, side);
+  const taker = match.players.find(p => p.uid === match.restart.taker);
+  assert.equal(taker.slot === 0, expected === 'goalKick');
+  const spot = [match.ball.x, match.ball.y];
+  for (let i = 0; i < 30; i++) MatchEngine.step(match, random, tactic);
+  assert.deepEqual([match.ball.x, match.ball.y], spot);
+  while (match.restart) MatchEngine.step(match, random, tactic);
+  assert.equal(match.ball.kicker, taker.uid);
+  assert.equal(match.ball.kind, 'pass');
+  assert.ok(match.ball.airborneUntil > match.seconds);
+  assert.equal(match.players.find(p => p.uid === match.ball.intendedReceiver).side, side);
+}
+
 function run(seed, batchSize) {
   const { match, random } = create(seed);
   const tactic = { style: 'balanced', press: 50, tempo: 50 };
@@ -111,15 +134,18 @@ assert.equal(run(42, 3).ticks, 10800, 'a match must finish after 90 game minutes
   assert.equal(match.players.filter(player => player.pressRole === 'cover').length, 1, 'a second defender should cover behind the press');
 }
 {
-  const actions = run(42, 3).actions;
+  // Rare saves and solo goals are checked across fixtures instead of requiring all in one game.
+  const games = [42, 71, 108, 201].map(seed => run(seed, 3));
+  const actions = Object.fromEntries(Object.keys(games[0].actions).map(key =>
+    [key, games.reduce((sum, game) => sum + game.actions[key], 0)]));
   for (const kind of ['dribbles', 'steals', 'tackles', 'slides', 'headers', 'catches', 'punches', 'passes', 'shots']) {
     assert.ok(actions[kind] > 0, `${kind} must occur in the match simulation`);
   }
   assert.ok(actions.completedPasses / actions.passes > .7, 'most selected passes should reach a teammate');
   assert.ok(actions.feints > 0 && actions.nutmegs > 0, 'both skill moves should occur against defenders');
   assert.equal(run(42, 3).goalMoments, run(42, 3).score.reduce((sum, goals) => sum + goals, 0));
-  assert.ok(run(42, 3).goalCredits.some(([, assist]) => assist), 'a completed final pass can produce an assist');
-  assert.ok(run(42, 3).goalCredits.some(([, assist]) => !assist), 'solo goals should not invent an assist');
+  assert.ok(games.flatMap(game => game.goalCredits).some(([, assist]) => assist), 'a completed final pass can produce an assist');
+  assert.ok(games.flatMap(game => game.goalCredits).some(([, assist]) => !assist), 'solo goals should not invent an assist');
 }
 
 {
