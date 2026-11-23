@@ -300,6 +300,10 @@
   function movePlayers(match) {
     const holder = activePlayer(match);
     for (const player of match.players) {
+      if (player === holder && match.ball.heldUntil > match.seconds) {
+        player.vx = player.vy = 0;
+        continue;
+      }
       const dx = player.tx - player.x;
       const dy = player.ty - player.y;
       const d = Math.hypot(dx, dy);
@@ -360,6 +364,8 @@
     match.ball.actionAt = match.seconds + (specialLevel(player, 'oneTouchPass') ? .16 : .35);
     match.ball.dribbleUntil = 0;
     match.ball.airborneUntil = 0;
+    match.ball.heldUntil = 0;
+    match.ball.punchLift = 0;
     match.ball.intendedReceiver = null;
     match.ball.trail = [];
     if ((kind === 'intercept' || kind === 'tackle' || kind === 'slide') && oldSide !== player.side && match.seconds > 1) {
@@ -381,11 +387,18 @@
       const control = rating(holder, 'ballControl', holder.pass);
       const chance = clamp(.11 + (tackling - control) / 320 + press / 850, .04, .28);
       const move = distance(defender, holder) > 1.7 ? 'slide' : 'tackle';
-      if (match.tick % 18 === 0) recordAction(match, move, defender, move === 'slide' ? 1.15 : .8);
-      if (random() < chance) {
+      const won = random() < chance;
+      if (won || match.tick % 18 === 0) {
+        recordAction(match, move, defender, move === 'slide' ? .98 : .7, {
+          contactX: match.ball.x, contactY: match.ball.y, won
+        });
+      }
+      if (won) {
         takePossession(match, defender, move);
-        recordAction(match, move, defender, move === 'slide' ? 1.15 : .8);
-        if (match.highlight) match.highlight.loser = holder.uid;
+        if (match.highlight?.winner === defender.uid) {
+          Object.assign(match.highlight, { loser: holder.uid, start: match.seconds,
+            x: match.ball.x, y: match.ball.y });
+        }
         return true;
       }
     }
@@ -482,6 +495,7 @@
     match.ball.passBy = kind === 'pass' ? holder.uid : null;
     match.ball.kicker = holder.uid;
     match.ball.intendedReceiver = null;
+    match.ball.punchLift = 0;
     match.ball.fromThrow = false;
     match.ball.passTarget = null;
     match.ball.ignoreUntil = match.seconds + .4;
@@ -522,8 +536,12 @@
       event(match, `${holder.name} がシュート！`, 'shot');
       return;
     }
-    const passChance = attackingTactic === 'possession' ? .8 : attackingTactic === 'counter' ? .5 : .68;
-    if (pressure < 6 || random() < passChance) {
+    const spaceAhead = !match.players.some(p => p.side !== holder.side &&
+      (p.x - holder.x) * dir > 0 && (p.x - holder.x) * dir < 8 && Math.abs(p.y - holder.y) < 3.5);
+    const basePass = attackingTactic === 'possession' ? .51 : attackingTactic === 'counter' ? .26 : .37;
+    const passChance = clamp(basePass + (pressure < 3 ? .28 : 0) + (spaceAhead ? -.17 : .12)
+      - .04 * specialLevel(holder, 'dribbler'), .12, .88);
+    if (holder.slot === 0 || random() < passChance) {
       const receiver = findPass(match, holder, tactic, random);
       if (receiver) {
         const oneTouchBonus = match.seconds - holder.receivedAt <= 1 ? 3 * specialLevel(holder, 'oneTouchPass') : 0;
@@ -630,6 +648,12 @@
     const ball = match.ball;
     const holder = activePlayer(match);
     if (holder) {
+      if (ball.heldUntil > match.seconds) {
+        ball.x = holder.x;
+        ball.y = holder.y;
+        match.possessionSeconds[holder.side] += DT;
+        return;
+      }
       const dir = direction(holder.side);
       const touch = Math.sin(match.seconds * 10);
       const skill = holder.skillMove?.until > match.seconds ? holder.skillMove : null;
@@ -710,10 +734,14 @@
           const saveChance = clamp(.42 + (reflexes + saving) / 440 - speed / 110 + .035 * specialLevel(player, 'shotStopper'), .35, .9);
           if (random() < saveChance) {
             const catchBall = speed < 25 || random() < clamp(.25 + rating(player, 'catching', player.ovr) / 200, .3, .75);
+            const approach = { contactX: ball.x, contactY: ball.y };
             if (catchBall) {
               takePossession(match, player);
-              match.ball.actionAt = match.seconds + 1;
-              recordAction(match, 'catch', player, 1.25);
+              ball.x = player.x;
+              ball.y = player.y;
+              ball.heldUntil = match.seconds + 1.05;
+              ball.actionAt = ball.heldUntil;
+              recordAction(match, 'catch', player, 1.05, approach);
               match.actionCounts.catches++;
               event(match, `${player.name} がジャンプしてキャッチ！`, 'save');
             } else {
@@ -721,11 +749,17 @@
               ball.kind = 'free';
               match.assistCandidate = null;
               ball.lastTouch = player.side;
-              ball.vx = direction(player.side) * 14;
-              ball.vy = (random() - .5) * 12;
+              ball.vx = direction(player.side) * 13;
+              ball.vy = (ball.y < 34 ? -1 : 1) * (8 + random() * 5);
+              ball.flightStart = match.seconds;
+              ball.flightDuration = .85;
+              ball.airborneUntil = match.seconds + ball.flightDuration;
+              ball.fromThrow = false;
+              ball.punchLift = 23;
+              ball.trail = [];
               ball.kicker = player.uid;
               ball.ignoreUntil = match.seconds + .5;
-              recordAction(match, 'punch', player, 1.25);
+              recordAction(match, 'punch', player, .85, approach);
               match.actionCounts.punches++;
               event(match, `${player.name} がジャンプしてパンチング！`, 'save');
             }
