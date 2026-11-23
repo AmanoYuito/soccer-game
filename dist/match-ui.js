@@ -391,6 +391,73 @@ function drawBallIllustration(ctx, x, y, groundY, spin) {
   ctx.restore();
 }
 
+// Sprite space is upright. Only the approach direction uses the pitch projection.
+function drawChallenge(ctx, action, phase, camera, x, y, kit) {
+  const dx = (action.contactX - action.x) * 1100 / 105;
+  const dy = (action.contactY - action.y) * 620 / 68;
+  const screenX = camera === 'full' ? dx : dx + .66 * dy;
+  const screenY = camera === 'full' ? dy : -.07 * dx + .48 * dy;
+  const length = Math.hypot(screenX, screenY) || 1;
+  const ux = screenX / length, uy = screenY / length;
+  const slide = action.kind === 'slide';
+  // Push off, meet the ball, then pull the planted foot underneath the body.
+  const extension = Math.min(1, phase / .22, (1 - phase) / .28);
+  const push = extension * (slide ? 7 : 3);
+  ctx.save();
+  ctx.translate(Math.round(x + ux * push), Math.round(y + uy * push));
+  ctx.scale(Math.sign(ux) || kit.dir, 1);
+  const stride = Math.round(extension * (slide ? 17 : 10) * (.55 + .45 * Math.abs(ux)));
+  const depth = Math.round(uy * extension * (slide ? 12 : 7));
+  const drop = Math.round(extension * (slide ? 15 : 6));
+  const hip = slide ? -Math.round(extension * 5) : 0;
+  const head = slide ? hip - Math.round(extension * 8) : 2;
+  const rect = (color, left, top, width, height) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(left, top, width, height);
+  };
+  if (slide && phase > .1) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (1 - phase) * 2);
+    for (let i = 0; i < 6; i++) {
+      const age = (phase * 1.5 + i / 6) % 1;
+      const trail = 8 + age * 26;
+      rect(i % 2 ? '#d1cb77' : '#587d37', -Math.round(Math.abs(ux) * trail) - i % 3,
+        6 - Math.round(uy * trail + Math.sin(age * Math.PI) * (4 + i % 3)), 3, 2);
+    }
+    ctx.restore();
+  }
+  // The back boot bears the weight; the leading boot reaches along the ball line.
+  rect(kit.shorts, hip - 5, 1 + Math.round(drop * .25), 5, 6);
+  rect('#213036', hip - 8, 8 + Math.round(drop * .18), 8, 3);
+  rect(kit.shorts, hip, 2 + Math.round(drop * .2), 7 + Math.round(stride * .6), 5);
+  rect(kit.shirt, hip + 4 + Math.round(stride * .5), 5 + Math.round(depth * .5),
+    4 + Math.round(stride * .5), 4);
+  rect('#213036', hip + 7 + stride, 7 + depth, 7, 4);
+  rect(kit.shirt, hip - 7, -11 + Math.round(drop * .76), 15, slide ? 10 : 14);
+  rect(kit.trim, hip - 6, -9 + Math.round(drop * .76), 12, 3);
+  rect(kit.skin, hip - 10, -5 + Math.round(drop * .65), 5, 6);
+  rect(kit.hair, head - 6, -22 + drop, 13, 7);
+  rect(kit.skin, head - 5, -17 + drop, 12, 8);
+  rect(kit.hair, head - 6, -18 + drop, 3, 5);
+  rect('#302f32', head + 3, -15 + drop, 2, 2);
+  ctx.restore();
+}
+
+function keeperSavePose(action, time, camera, dir) {
+  const t = clamp((time - action.start) / (action.until - action.start), 0, 1);
+  const dx = (action.contactX - action.x) * 1100 / 105;
+  const dy = (action.contactY - action.y) * 620 / 68;
+  const facing = Math.sign(camera === 'full' ? dx : dx + .66 * dy) || dir;
+  const reach = (1 - t) ** 2;
+  const punch = action.kind === 'punch';
+  return {
+    facing, punch, lean: facing * reach * (punch ? 9 : 5),
+    lift: reach * (punch ? 12 : 8),
+    handX: facing * (punch ? 8 + 11 * reach : 2 + 6 * reach),
+    handY: -7 - reach * (punch ? 16 : 11)
+  };
+}
+
 function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = matchCamera) {
   if (!canvas || !match) return;
   const ctx = canvas.getContext('2d');
@@ -506,8 +573,9 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     const action = [...match.visualActions].reverse().find(item => item.uid === player.uid && item.until > match.seconds);
     const pose = action?.kind;
     const actionProgress = action ? Math.min(1, Math.max(0, (match.seconds - action.start) / (action.until - action.start))) : 0;
-    const jump = ['header', 'catch', 'punch'].includes(pose) ? Math.max(0, Math.round(Math.sin(Math.min(1, (match.seconds - action.start) / (action.until - action.start)) * Math.PI) * 15)) : 0;
+    const jump = pose === 'header' ? Math.max(0, Math.round(Math.sin(Math.min(1, (match.seconds - action.start) / (action.until - action.start)) * Math.PI) * 15)) : 0;
     const dir = player.side === 0 ? 1 : -1;
+    const save = (pose === 'catch' || pose === 'punch') && keeperSavePose(action, match.seconds, camera, dir);
     const own = player.side === match.ownSide;
     const keeper = player.slot === 0;
     const look = appearanceFor(player);
@@ -564,23 +632,13 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       const remaining = Math.max(0, match.restart.until - match.seconds);
       ctx.translate(-dir * Math.min(1, remaining / .65) * 13, 0);
     }
-    if (pose !== 'slide') ctx.translate(lean, -bob);
+    if (save) ctx.translate(save.lean, -save.lift);
+    else if (pose !== 'slide' && pose !== 'tackle') ctx.translate(lean, -bob);
     ctx.translate(0, -jump);
     if (pose === 'feint') ctx.translate(0, (action.lane || 1) * Math.sin(actionProgress * Math.PI) * 5);
     if (pose === 'stumble') { ctx.translate(x, y); ctx.rotate((action.lane || 1) * Math.sin(actionProgress * Math.PI) * .26); ctx.translate(-x, -y); }
-    if (pose === 'slide') {
-      ctx.fillStyle = shorts;
-      ctx.fillRect(x - dir * 9 - 6, y - 1, 17, 6);
-      ctx.fillStyle = shirt;
-      ctx.fillRect(x - 9, y - 7, 19, 9);
-      ctx.fillStyle = skin;
-      ctx.fillRect(x + dir * 10 - 4, y - 9, 8, 8);
-      ctx.fillStyle = hair;
-      ctx.fillRect(x + dir * 10 - 4, y - 11, 8, 3);
-      ctx.fillStyle = '#1d3340';
-      ctx.fillRect(x + dir * 13, y + 1, 12, 3);
-      ctx.fillStyle = '#e4cc91';
-      ctx.fillRect(x - dir * 10, y + 9, 4, 2);
+    if ((pose === 'slide' || pose === 'tackle') && actionProgress < .96) {
+      drawChallenge(ctx, action, actionProgress, camera, x, y, { dir, shirt, trim, shorts, skin, hair });
     } else {
     ctx.fillStyle = '#1d3340';
     ctx.fillRect(x - 7, y + 8 + stride, 5, 3);
@@ -631,7 +689,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fillStyle = '#1d3340';
       ctx.fillRect(x + heading * (4 + push), y + 7, heading * 5, 3);
     }
-    if (pose === 'pass' || pose === 'shot' || pose === 'tackle') {
+    if (pose === 'pass' || pose === 'shot') {
       ctx.fillStyle = shorts;
       ctx.fillRect(x + dir * 5, y + 5, dir * 12, 4);
       ctx.fillStyle = '#1d3340';
@@ -650,11 +708,29 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fillRect(x - 11, y - 22, 4, 13);
       ctx.fillRect(x + 7, y - 22, 4, 13);
     }
+    if (save) {
+      const hx = Math.round(x + save.handX), hy = Math.round(y + save.handY);
+      const glove = (gx, gy) => {
+        ctx.fillStyle = '#273b39';
+        ctx.fillRect(gx - 4, gy - 4, 9, 8);
+        ctx.fillStyle = '#fff5c7';
+        ctx.fillRect(gx - 3, gy - 3, 7, 5);
+      };
+      ctx.strokeStyle = shirt;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(x + save.facing * 6, y - 7);
+      ctx.lineTo(hx + save.facing * 4, hy);
+      ctx.moveTo(x - save.facing * 6, y - 7);
+      ctx.lineTo(save.punch ? x - save.facing * 11 : hx - save.facing * 5, save.punch ? y : hy + 1);
+      ctx.stroke();
+      glove(hx + save.facing * (save.punch ? 2 : 6), hy);
+      glove(save.punch ? x - save.facing * 11 : hx - save.facing * 6, save.punch ? y : hy + 1);
+    }
     if (jump) {
       ctx.fillStyle = skin;
       ctx.fillRect(x - 11, y - 21, 4, 13);
       ctx.fillRect(x + 7, y - 21, 4, 13);
-      if (pose === 'punch') ctx.fillRect(x + dir * 8, y - 29, 5, 9);
     }
     }
     ctx.restore();
@@ -670,7 +746,7 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     }
     ctx.restore();
   }
-  if (match.highlight && match.seconds < match.highlight.until) {
+  if (match.highlight?.kind === 'intercept' && match.seconds < match.highlight.until) {
     const flash = match.highlight;
     const x = Math.round(px(flash.x));
     const y = Math.round(py(flash.y));
@@ -690,15 +766,41 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
       ctx.fill();
     }
   }
-  const bx = Math.round(px(match.ball.x));
-  const by = Math.round(py(match.ball.y));
+  const contact = match.highlight;
+  const age = contact ? match.seconds - contact.start : Infinity;
+  const justWon = (contact?.kind === 'tackle' || contact?.kind === 'slide') && age >= 0 && age < .32;
+  let ballX = match.ball.x, ballY = match.ball.y;
+  if (justWon && carrier?.uid === contact.winner) {
+    const settle = Math.min(1, age / .22);
+    ballX = contact.x + (ballX - contact.x) * settle;
+    ballY = contact.y + (ballY - contact.y) * settle;
+  }
+  if (justWon) {
+    const reach = 10 + age * 28;
+    ctx.save();
+    ctx.translate(px(contact.x), py(contact.y));
+    ctx.globalAlpha = 1 - age / .32;
+    ctx.strokeStyle = '#ffefaa';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = i * Math.PI * 2 / 5;
+      ctx.moveTo(Math.cos(a) * reach, Math.sin(a) * reach);
+      ctx.lineTo(Math.cos(a) * (reach + 6), Math.sin(a) * (reach + 6));
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  const bx = Math.round(px(ballX));
+  const by = Math.round(py(ballY));
   const flight = match.ball.airborneUntil > match.seconds && match.ball.flightDuration > 0
     ? Math.sin(Math.PI * (match.seconds - match.ball.flightStart) / match.ball.flightDuration) * 21 : 0;
   const holdAction = carrier && [...match.visualActions].reverse().find(item => item.uid === carrier.uid && item.until > match.seconds);
-  const heldHeight = holdAction && ['header', 'catch'].includes(holdAction.kind) ? 17 : 0;
+  const held = holdAction?.kind === 'catch' && keeperSavePose(holdAction, match.seconds, camera, carrier.side === 0 ? 1 : -1);
+  const heldHeight = holdAction?.kind === 'header' ? 17 : 0;
   const throwing = match.restart?.kind === 'throwIn';
-  const launchHeight = match.ball.fromThrow && match.ball.airborneUntil > match.seconds
-    ? 23 * (1 - (match.seconds - match.ball.flightStart) / match.ball.flightDuration) : 0;
+  const launchHeight = match.ball.airborneUntil > match.seconds
+    ? (match.ball.fromThrow ? 23 : match.ball.punchLift || 0) * (1 - (match.seconds - match.ball.flightStart) / match.ball.flightDuration) : 0;
   const lift = throwing ? 23 : Math.max(0, flight + launchHeight, heldHeight);
   const spin = (match.ball.x + match.ball.y * .35) * .11 + (flight > 0 ? match.seconds * 6 : 0);
   ctx.save();
@@ -707,7 +809,8 @@ function drawMatch(match = activeMatch, canvas = $('#match-canvas'), camera = ma
     const determinant = .48 + .07 * .66;
     ctx.transform(.48 / determinant, .07 / determinant, -.66 / determinant, 1 / determinant, 0, 0);
   }
-  drawBallIllustration(ctx, 0, (throwing ? 0 : 5) - lift, 5, spin);
+  if (held) drawBallIllustration(ctx, held.lean + held.handX, held.handY - held.lift, 5, spin);
+  else drawBallIllustration(ctx, 0, (throwing ? 0 : 5) - lift, 5, spin);
   ctx.restore();
   ctx.restore();
   if (match.restart) {
